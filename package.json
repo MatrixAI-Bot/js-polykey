@@ -31,6 +31,18 @@
   "engines": {
     "node": ">=8.7.0"
   },
+  "files": [
+    "/bin",
+    "/src",
+    "/oclif.manifest.json"
+  ],
+  "oclif": {
+    "commands": "./src/commands/polykey.ts",
+    "bin": "polykey",
+    "plugins": [
+      "@oclif/plugin-help"
+    ]
+  },
   "dependencies": {
     "@types/fs-extra": "^5.0.5",
     "@types/jsonfile": "^5.0.0",
