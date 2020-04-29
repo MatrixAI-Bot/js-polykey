@@ -15,7 +15,8 @@ module.exports = {
     libraryTarget: 'umd',
   },
   externals: {
-    virtualfs: "encryptedfs",
+    virtualfs: "virtualfs",
+    encryptedfs: "encryptedfs",
     threads: "threads",
   },
   devtool: "source-map",

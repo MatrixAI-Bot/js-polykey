@@ -73,6 +73,9 @@ export default class Polykey {
     }
     return true */
   }
+  _fileExistsSync(path: string): boolean {
+    return this._fs.pathExistsSync(path)
+  }
   
   async createVault(vaultName: string) {
     const path = Path.join(this._polykeyPath, vaultName)
@@ -130,6 +133,7 @@ export default class Polykey {
     // Remove from metadata
     if (this._metadata.hasOwnProperty(vaultName)) {
       delete this._metadata[vaultName]
+      await this._writeMetadata()
     }
 
     const successful: boolean = !this._fs.existsSync(path) && !this._vaults.has(vaultName) && !this._metadata.hasOwnProperty(vaultName)
@@ -139,10 +143,10 @@ export default class Polykey {
 
 
   /* Validates whether all the artefacts needed to operate
-   * a Vault are present. Namely this the vault directory
-   * and the metadata for the vault containg the key
+  * a Vault are present. Namely this the vault directory
+  * and the metadata for the vault containg the key
   */
- async _validateVault (vaultName: string): Promise<void> {
+  async _validateVault (vaultName: string): Promise<void> {
     const existsMeta = _.has(this._metadata, vaultName)
     if (!existsMeta) {
       throw Error('Vault metadata does not exist')
@@ -156,7 +160,7 @@ export default class Polykey {
 
 
   async addSecret (vaultName: string, secretName: string, secret: Buffer): Promise<void> {
-    let vault
+    let vault: Vault
     try {
       vault = await this._getVault(vaultName)
     } catch(err) {
@@ -187,8 +191,8 @@ export default class Polykey {
 
   }
 
-  listVaults() {
-
+  listVaults(): string[] {
+    return Array.from(this._vaults.keys())
   }
 
   tagVault () {
@@ -209,36 +213,6 @@ export default class Polykey {
 
 
   /* ============ HELPERS =============== */
-
-
-  /*   _mkdirRecursiveSync (fileSys: Object, targetDir: string, { isRelativeToScript = false }: Object = {}) {
-    const sep = Path.sep
-    const initDir = Path.isAbsolute(targetDir) ? sep : ''
-    // TODO: figure out what this actually does
-    const baseDir = isRelativeToScript ? __dirname : '.'
-    // relative dir
-    let targetDirs
-    if (initDir === '') {
-      targetDirs = Path.resolve(Path.join(baseDir, targetDir)).split(sep)
-    } else {
-      targetDirs = targetDir.split(sep)
-    }
-    targetDirs.reduce((parentDir, childDir) => {
-      let newDir = Path.join(parentDir, childDir)
-      try {
-        fileSys.mkdirSync(newDir)
-      } catch (err) {
-        if (err.code === 'EEXIST') {
-          return newDir
-        }
-        if (err.code === 'ENOENT') { // Throw the original parentDir error on curDir `ENOENT` failure.
-          throw new Error(`EACCES: permission denied, mkdir '${parentDir}'`)
-        }
-      }
-      return newDir
-    }, sep)
-  }
-  */
   async _writeMetadata(): Promise<void> {
     try {
       await jsonfile.writeFile(this._metadataPath, this._metadata)
@@ -247,7 +221,7 @@ export default class Polykey {
     }
   }
 
-  async _getVault (vaultName: string): Promise<Vault> {
+  async _getVault(vaultName: string): Promise<Vault> {
     if (this._vaults.has(vaultName)) {
       const vault = this._vaults.get(vaultName)
       if (vault) {
@@ -276,6 +250,18 @@ export default class Polykey {
       this._metadata = metadataTemplate
     } else if (fs.existsSync(this._metadataPath)) {
       this._metadata = jsonfile.readFileSync(this._metadataPath)
+    }
+    
+    // Load all of the vaults into memory
+    for (const vaultName in this._metadata) {
+      if (this._metadata.hasOwnProperty(vaultName)) {
+        const path = Path.join(this._polykeyPath, vaultName)
+        if (this._fileExistsSync(path)) {
+          const vaultKey = this._metadata[vaultName].key
+          const vault = new Vault(vaultName, vaultKey, this._polykeyPath)
+          this._vaults.set(vaultName, vault)
+        }
+      }
     }
   }
 

@@ -31,17 +31,8 @@
   "engines": {
     "node": ">=8.7.0"
   },
-  "files": [
-    "/bin",
-    "/src",
-    "/oclif.manifest.json"
-  ],
-  "oclif": {
-    "commands": "./src/commands/polykey.ts",
-    "bin": "polykey",
-    "plugins": [
-      "@oclif/plugin-help"
-    ]
+  "bin": {
+    "polykey": "./bin/index.js"
   },
   "dependencies": {
     "@types/fs-extra": "^5.0.5",
@@ -62,12 +53,13 @@
     "kbpgp": "^2.1.0",
     "lodash": "^4.17.11",
     "moniker": "^0.1.2",
-    "oclif": "^1.13.1",
+    "commander": "^5.1.0",
     "openpgp": "^4.5.1",
     "threads": "1.4.0",
     "winston": "^3.2.1"
   },
   "devDependencies": {
+    "@types/commander": "^2.9.1",
     "@types/debug": "^4.1.4",
     "@types/node": "^11.13.7",
     "@types/openpgp": "^4.4.4",
