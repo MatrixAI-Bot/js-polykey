@@ -1,15 +1,60 @@
-// import vfs from 'virtualfs'
-import fs from 'fs-extra'
+import fs, { PathLike } from 'fs'
 import Path from 'path'
 import os from 'os'
 import Vault from './Vault'
-import util from 'util'
 import crypto from 'crypto'
 import jsonfile from 'jsonfile'
 import _ from 'lodash'
-import nodeFS from 'fs'
 import KeyManager from './KeyManager'
+import EncryptedFS from '../encryptedfs-tmp/EncryptedFS'
 
+type CharacterEncoding = 'ascii' | 'utf8' | 'utf-8' | 'utf16le' | 'ucs2' | 'ucs-2' | 'base64' | 'latin1' | 'binary' | 'hex' | undefined
+export interface GeneralFileSystem {
+  exists(path: string, callback: (exists: boolean) => void): void
+  existsSync(path: string): boolean
+  mkdir(path: string, options: {recursive: boolean} | undefined, callback: (err: NodeJS.ErrnoException | null, path: string) => void): void
+  mkdirSync(path: string, options: {recursive: boolean} | undefined): void
+  rmdirSync(path: string, options?: {recursive: boolean} | undefined): void
+  readFileSync(path: string, options: {encoding?: string | undefined, flag?: string | undefined} | undefined): Buffer | string
+  open(path: string, flags: string, mode: number, callback: (err: NodeJS.ErrnoException | null, fd: number | undefined) => void): void
+	openSync(path: string, flags: string, mode?: number): number
+	// access(path: PathLike, mode: number | undefined, callback: NoParamCallback): void
+	// accessSync(path: PathLike, mode?: number | undefined): void
+	// close(fd: number, callback: NoParamCallback): void
+	// closeSync(fd: number): void
+  // rmdirSync(path: string, options: {recursive: boolean} | undefined): void
+  readdirSync(path: string, options: {encoding: CharacterEncoding, withFileTypes?: boolean} | undefined): string[]
+	write(fd: number, buffer: Buffer, offset: number, length: number, position: number, callback: (err: NodeJS.ErrnoException | null, written: number, buffer: Buffer) => void): void
+	writeSync(fd: number, buffer: Buffer, offset?: number, length?: number, position?: number): number
+	// open(path: PathLike, flags: string | number, mode: string | number | null | undefined, callback: (err: NodeJS.ErrnoException | null, fd: number) => void): void
+	// openSync(path: PathLike, flags: string | number, mode?: string | number | null | undefined): number
+	// exists(path: PathLike, callback: (exists: boolean) => void): void
+	// existsSync(path: PathLike): boolean
+	// read<TBuffer extends NodeJS.ArrayBufferView>(fd: number, buffer: TBuffer, offset: number, length: number, position: number | null, callback: (err: NodeJS.ErrnoException | null, bytesRead: number, buffer: TBuffer) => void): void
+	// readSync(fd: number, buffer: NodeJS.ArrayBufferView, offset: number, length: number, position: number | null): number
+	// appendFile(file: string | number | Buffer | URL, data: any, options: FileOptions, callback: NoParamCallback): void
+	// appendFileSync(file: string | number | Buffer | URL, data: any, options?: string | FileOptions | null | undefined): void
+	// unlink(path: PathLike, callback: NoParamCallback): void
+	// unlinkSync(path: PathLike): void
+	// open(path: PathLike, flags: string | number, mode: string | number | null | undefined, callback: (err: NodeJS.ErrnoException | null, fd: number) => void): void
+	// openSync(path: PathLike, flags: string | number, mode?: string | number | null | undefined): number
+	// readlink(path: PathLike, ...args: Array<any>): void
+	// readlinkSync(path: PathLike, options?: FileOptions): string | Buffer
+	// symlink(dstPath: PathLike, srcPath: PathLike, ...args: Array<any>): void
+	// symlinkSync(dstPath: PathLike, srcPath: PathLike, type: "dir" | "file" | "junction" | null | undefined): void
+	// link(existingPath: PathLike, newPath: PathLike, callback: NoParamCallback): void
+	// linkSync(existingPath: PathLike, newPath: PathLike): void
+	// fstat(fdIndex: number, callback: (err: NodeJS.ErrnoException | null, stat: Stat) => void): void
+	// fstatSync(fdIndex: number): Stat
+	// mkdtemp(prefix: String, options: { encoding: CharacterEncoding } | CharacterEncoding | null | undefined, callback: (err: NodeJS.ErrnoException | null, path: string | Buffer) => void): void
+	// mkdtempSync(prefix: String, options: { encoding: CharacterEncoding } | CharacterEncoding | null | undefined): string | Buffer
+	// chmod(path: PathLike, mode: number, callback: NoParamCallback): void
+	// chmodSync(path: PathLike, mode: number): void
+	// chown(path: PathLike, uid: number, gid: number, callback: NoParamCallback): void
+	// chownSync(path: PathLike, uid: number, gid: number): void
+	// utimes(path: PathLike, atime: number | string | Date, mtime: number | string | Date, callback: NoParamCallback): void
+	// utimesSync(path: PathLike, atime: number | string | Date, mtime: number | string | Date): void
+}
 type Metadata = {
   [vaultName: string]: {
     key: Buffer, tags: Array<string>
@@ -28,11 +73,11 @@ const vaultKeySize = 128/8 // in bytes
 export default class Polykey {
   _polykeyDirName: string
   _polykeyPath: string
-  _fs: typeof fs
+  _fs: GeneralFileSystem
   _vaults:Map<string, Vault>
-  // _key: Buffer
-  // _pubKey: Buffer
-  // _privKey: Buffer
+  _key: Buffer
+  _pubKey: Buffer
+  _privKey: Buffer
   _keySize: number
   _metadata: Metadata
   _metadataPath: string
@@ -40,23 +85,41 @@ export default class Polykey {
   // KeyManager = KeyManager
 
   constructor(
-    km: KeyManager, 
-    keyLen: number = 32, 
-    homeDir: string = os.homedir(), 
-    altFS: any = fs
+    km: KeyManager,
+    key: Buffer | string,
+    keyLen: number = 32,
+    homeDir: string = os.homedir(),
+    fileSystem: GeneralFileSystem | undefined = undefined
   ) {
     this._km = km
     homeDir = homeDir || os.homedir()
-/*     this._pubKey = pubKey
-    this._privKey = privKey */
     this._polykeyDirName = '.polykey'
     this._polykeyPath = Path.join(homeDir, this._polykeyDirName)
     this._metadataPath = Path.join(this._polykeyPath, 'metadata')
-    this._fs = altFS
+    // Load keys
+    if (typeof key === 'string') {
+      this._key = this._loadKey(key!)
+    } else {
+      this._key = key
+    }
+    // Set file system
+    if (fileSystem !== undefined) {
+      this._fs = fileSystem
+    } else {
+      const vfsInstance = new (require('virtualfs')).VirtualFS
+      this._fs = new EncryptedFS(
+        this._key,
+        vfsInstance,
+        vfsInstance,
+        fs,
+        process
+      )
+    }
+    // Initialize reamining members
     this._vaults = new Map()
-    // this._key = this._loadKey(key)
     this._keySize = keyLen
     this._metadata = {}
+    // sync with polykey directory
     this._initSync()
   }
 
@@ -64,7 +127,7 @@ export default class Polykey {
     return KeyManager
   }
   async _fileExists(path: string): Promise<boolean> {
-    return this._fs.pathExists(path)
+    return this._fs.existsSync(path)
 /*     try {
       await this._fs.access(path)
     } catch(e) {
@@ -74,10 +137,58 @@ export default class Polykey {
     return true */
   }
   _fileExistsSync(path: string): boolean {
-    return this._fs.pathExistsSync(path)
+    return this._fs.existsSync(path)
   }
-  
-  async createVault(vaultName: string) {
+
+  /////////////
+  // Secrets //
+  /////////////
+  async secretExists(vaultName: string, secretName: string): Promise<boolean> {
+    const vault = await this._getVault(vaultName)
+    const secretExists = vault._secretExists(secretName)
+
+    return secretExists
+  }
+
+  async addSecret(vaultName: string, secretName: string, secret: Buffer): Promise<void> {
+    let vault: Vault
+    try {
+      vault = await this._getVault(vaultName)
+    } catch(err) {
+      throw err
+    }
+
+    vault.addSecret(secretName, secret)
+  }
+
+  async getSecret(vaultName: string, secretName: string): Promise<Buffer | string> {
+    let vault: Vault
+    let secret: string | Buffer
+    try {
+      vault = await this._getVault(vaultName)
+      secret = vault.getSecret(secretName)
+    } catch(err) {
+      throw err
+    }
+    return secret
+  }
+
+  async copySecret(vaultName: string, secretName: string): Promise<Buffer | string> {
+    let vault: Vault
+    let secret: string | Buffer
+    try {
+      vault = await this._getVault(vaultName)
+      secret = vault.getSecret(secretName)
+    } catch(err) {
+      throw err
+    }
+    return secret
+  }
+
+  /////////////
+  // Vaults //
+  /////////////
+  async createVault(vaultName: string, key: Buffer | undefined = undefined) {
     const path = Path.join(this._polykeyPath, vaultName)
     let vaultExists: boolean
     try {
@@ -91,14 +202,22 @@ export default class Polykey {
       throw Error('Vault already exists!')
     }
 
-    // Directory not present, create one
     try {
-      await this._fs.mkdir(path)
-      const vaultKey = crypto.randomBytes(vaultKeySize)
-      this._metadata[vaultName] = { key : vaultKey, tags: []}
+      // Directory not present, create one
+      this._fs.mkdirSync(path, {recursive:true})
+      // Create key if not provided
+      let vaultKey: Buffer
+      if (key === undefined) {
+        // Generate new key
+        vaultKey = crypto.randomBytes(vaultKeySize)
+      } else {
+        // Assign key if it is provided
+        vaultKey = key
+      }
+      this._metadata[vaultName] = { key: vaultKey, tags: []}
       // TODO: this methods seems a bit magical
       await this._writeMetadata()
-      const vault = new Vault(vaultName, vaultKey, this._polykeyPath)
+      const vault = new Vault(vaultName, vaultKey, this._polykeyPath, this._fs)
       this._vaults.set(vaultName, vault)
     } catch (err) {
       // Delete vault dir and garbage collect
@@ -109,12 +228,12 @@ export default class Polykey {
 
   async vaultExists(vaultName: string): Promise<boolean> {
     const path = Path.join(this._polykeyPath, vaultName)
-    const vaultExists = await fs.pathExists(path)
+    const vaultExists = this._fs.existsSync(path)
 
     return vaultExists
   }
 
-  async destroyVault(vaultName: string): Promise<boolean> {
+  async destroyVault(vaultName: string) {
 
     // this is convenience function for removing all tags
     // and triggering garbage collection
@@ -136,9 +255,20 @@ export default class Polykey {
       await this._writeMetadata()
     }
 
-    const successful: boolean = !this._fs.existsSync(path) && !this._vaults.has(vaultName) && !this._metadata.hasOwnProperty(vaultName)
-
-    return successful
+    const vaultPathExists = this._fs.existsSync(path)
+    if (vaultPathExists) {
+      console.log(path)
+      
+      throw(Error('Vault path could not be destroyed!'))
+    }
+    const vaultEntryExists = this._vaults.has(vaultName)
+    if (vaultEntryExists) {
+      throw(Error('Vault could not be removed from PolyKey!'))
+    }
+    const metaDataHasVault = this._metadata.hasOwnProperty(vaultName)
+    if (metaDataHasVault) {
+      throw(Error('Vault metadata could not be destroyed!'))
+    }
   }
 
 
@@ -158,31 +288,6 @@ export default class Polykey {
     }
   }
 
-
-  async addSecret (vaultName: string, secretName: string, secret: Buffer): Promise<void> {
-    let vault: Vault
-    try {
-      vault = await this._getVault(vaultName)
-    } catch(err) {
-      throw err
-    }
-
-    vault.addSecret(secretName, secret)
-  }
-
-  async getSecret (vaultName: string, secretName: string): Promise<Buffer | string> {
-    let vault: Vault
-    let secret: string | Buffer
-    try {
-      vault = await this._getVault(vaultName)
-      secret = vault.getSecret(secretName)
-    } catch(err) {
-      throw err
-    }
-    return secret
-  }
-
-
   removeItem () {
 
   }
@@ -193,6 +298,16 @@ export default class Polykey {
 
   listVaults(): string[] {
     return Array.from(this._vaults.keys())
+  }
+
+  async listSecrets(vaultName: string): Promise<string[]> {
+    const vault = await this._getVault(vaultName)
+    return vault.listSecrets()
+  }
+
+  signFile (path: string) {
+    // this._km.sign
+
   }
 
   tagVault () {
@@ -221,7 +336,7 @@ export default class Polykey {
     }
   }
 
-  async _getVault(vaultName: string): Promise<Vault> {
+  private async _getVault(vaultName: string): Promise<Vault> {
     if (this._vaults.has(vaultName)) {
       const vault = this._vaults.get(vaultName)
       if (vault) {
@@ -235,7 +350,7 @@ export default class Polykey {
       throw err
     }
     const vaultKey = this._metadata[vaultName].key
-    const vault = new Vault(vaultName, vaultKey, this._polykeyPath)
+    const vault = new Vault(vaultName, vaultKey, this._polykeyPath, this._fs)
     this._vaults.set(vaultName, vault)
     return vault
   }
@@ -243,12 +358,12 @@ export default class Polykey {
   _initSync(): void {
     // check if .polykey exists
     //  make folder if doesn't
-    if (!fs.existsSync(this._polykeyPath)) {
-      fs.mkdirSync(this._polykeyPath)
+    if (!this._fs.existsSync(this._polykeyPath)) {
+      this._fs.mkdirSync(this._polykeyPath, {recursive: true})
       const metadataTemplate = {}
       jsonfile.writeFileSync(this._metadataPath, metadataTemplate)
       this._metadata = metadataTemplate
-    } else if (fs.existsSync(this._metadataPath)) {
+    } else if (this._fs.existsSync(this._metadataPath)) {
       this._metadata = jsonfile.readFileSync(this._metadataPath)
     }
     
@@ -258,7 +373,7 @@ export default class Polykey {
         const path = Path.join(this._polykeyPath, vaultName)
         if (this._fileExistsSync(path)) {
           const vaultKey = this._metadata[vaultName].key
-          const vault = new Vault(vaultName, vaultKey, this._polykeyPath)
+          const vault = new Vault(vaultName, vaultKey, this._polykeyPath, this._fs)
           this._vaults.set(vaultName, vault)
         }
       }
@@ -270,7 +385,7 @@ export default class Polykey {
     if (path instanceof Buffer) {
       return path
     }
-    const keyBuf = this._fs.readFileSync(path)
+    const keyBuf = Buffer.from(fs.readFileSync(path, undefined))
     return keyBuf
   }
 }

@@ -37,11 +37,10 @@ interface RmDirOptions {
 	recursive?: boolean
 }
 
-type CharacterEncoding = 'ascii' | 'utf8' | 'utf-8' | 'utf16le' | 'ucs2' | 'ucs-2' | 'base64' | 'latin1' | 'binary' | 'hex' | undefined
 type FileOptions = { 
-	encoding?: CharacterEncoding | undefined, 
+	encoding?: BufferEncoding | undefined, 
 	mode?: number | undefined, 
-	flag?: string | undefined 
+	flag?: string | undefined
 }
 
 type PathLike = string | Buffer | URL
@@ -103,8 +102,8 @@ interface GeneralFileSystem {
 	linkSync(existingPath: PathLike, newPath: PathLike): void
 	fstat(fdIndex: number, callback: (err: NodeJS.ErrnoException | null, stat: Stat) => void): void
 	fstatSync(fdIndex: number): Stat
-	mkdtemp(prefix: String, options: { encoding: CharacterEncoding } | CharacterEncoding | null | undefined, callback: (err: NodeJS.ErrnoException | null, path: string | Buffer) => void): void
-	mkdtempSync(prefix: String, options: { encoding: CharacterEncoding } | CharacterEncoding | null | undefined): string | Buffer
+	mkdtemp(prefix: String, options: { encoding: BufferEncoding } | BufferEncoding | null | undefined, callback: (err: NodeJS.ErrnoException | null, path: string | Buffer) => void): void
+	mkdtempSync(prefix: String, options: { encoding: BufferEncoding } | BufferEncoding | null | undefined): string | Buffer
 	chmod(path: PathLike, mode: number, callback: NoParamCallback): void
 	chmodSync(path: PathLike, mode: number): void
 	chown(path: PathLike, uid: number, gid: number, callback: NoParamCallback): void
@@ -112,12 +111,14 @@ interface GeneralFileSystem {
 	utimes(path: PathLike, atime: number | string | Date, mtime: number | string | Date, callback: NoParamCallback): void
 	utimesSync(path: PathLike, atime: number | string | Date, mtime: number | string | Date): void
 }
+fs.readdir
 interface LowerFileSystem extends GeneralFileSystem {
 	mkdir(path: PathLike, options?: MakeDirectoryOptions, callback?: (err: NodeJS.ErrnoException | null, path: PathLike) => void): void
 	mkdirSync(path: PathLike, options?: MakeDirectoryOptions): string
 	rmdir(path: PathLike, options: RmDirOptions | undefined, callback: NoParamCallback): void
 	rmdirSync(path: PathLike, options: RmDirOptions | undefined): void
-	readdirSync(path: PathLike, options?: { encoding: BufferEncoding; withFileTypes?: false } | CharacterEncoding): string[]
+	readdir(path: PathLike, options: { encoding: BufferEncoding; withFileTypes?: false } | undefined, callback: (err: NodeJS.ErrnoException | null, files: string[]) => void): void
+	readdirSync(path: PathLike, options: { encoding: BufferEncoding; withFileTypes?: false } | undefined): string[]
 	stat(path: PathLike, callback: (err: NodeJS.ErrnoException | null, stats: Stat) => void): void
 	statSync(path: PathLike): Stat
 }
@@ -126,8 +127,6 @@ interface UpperFileSystem extends GeneralFileSystem {
 	readdirSync(path: PathLike, options?: FileOptions): string[]
 	exists(path: PathLike, callback: (exists: boolean) => void): void
 	existsSync(path: PathLike): boolean
-	write<TBuffer extends NodeJS.ArrayBufferView>(fd: number, buffer: TBuffer, offset: number | null | undefined, length: number | null | undefined, position: number | null | undefined, callback: (err: NodeJS.ErrnoException | null, written: number, buffer: TBuffer) => void): void
-	writeSync(fd: number, buffer: NodeJS.ArrayBufferView, offset?: number | null | undefined, length?: number | null | undefined, position?: number | null | undefined): number
 	close(fd: number, callback: NoParamCallback): void
 	closeSync(fd: number): void
 	mkdirp(path: PathLike, ...args: Array<any>): void
@@ -355,16 +354,16 @@ export default class EncryptedFS {
 	mkdir(
 		path: PathLike,
 		options: MakeDirectoryOptions = {mode: 0o777, recursive: false},
-		callback: NoParamCallback
+		callback: (err: NodeJS.ErrnoException | null, path: string) => void
 	): void {
 		this._lowerDir.mkdir(path, options, (err) => {
 			if (options.recursive) {
 				this._upperDir.mkdirp(path, options.mode, (err: NodeJS.ErrnoException | null) => {
-					callback(err)
+					callback(err, path.toString())
 				})
 			} else {
 				this._upperDir.mkdir(path, options.mode, (err: NodeJS.ErrnoException | null) => {
-					callback(err)
+					callback(err, path.toString())
 				})
 			}
 		})
@@ -397,7 +396,7 @@ export default class EncryptedFS {
 	 */
 	mkdtemp(
 		prefix: string,
-		options: { encoding: CharacterEncoding } | CharacterEncoding | null | undefined = 'utf8',
+		options: { encoding: BufferEncoding } | BufferEncoding | null | undefined = 'utf8',
 		callback: (err: NodeJS.ErrnoException | null, path: string) => void
 	): void {
 		return this._upperDir.mkdtemp(prefix, options, (err, path) => {
@@ -419,7 +418,7 @@ export default class EncryptedFS {
 	 */
 	mkdtempSync(
 		prefix: string,
-		options: { encoding: CharacterEncoding } | CharacterEncoding | null | undefined = 'utf8'
+		options: { encoding: BufferEncoding } | BufferEncoding | null | undefined = 'utf8'
 	): string {
 		const lowerPath = this._lowerDir.mkdtempSync(prefix, options)
 		const lowerStat = this._lowerDir.statSync(lowerPath)
@@ -494,10 +493,14 @@ export default class EncryptedFS {
 		options: RmDirOptions | undefined = undefined
 	): void {
 		// TODO: rmdirSync on VFS doesn't have an option to recusively delete
-		if (!options?.recursive) {
+		try {
+			// if (!options?.recursive) {
 			this._upperDir.rmdirSync(path)
+			// }
+			this._lowerDir.rmdirSync(path, options)
+		} catch (err) {
+			throw(err)
 		}
-		this._lowerDir.rmdirSync(path, options)
 	}
 
 	/**
@@ -653,10 +656,14 @@ export default class EncryptedFS {
 	 */
 	readdir(
 		path: PathLike,
-		options: FileOptions | undefined = undefined,
+		options: {encoding: BufferEncoding, withFileTypes?: false} | undefined = undefined,
 		callback: (err: NodeJS.ErrnoException, contents: string[]) => void
 	): void {
-		return this._upperDir.readdir(path, options=options, callback=callback)
+		return this._upperDir.readdir(path, options, (err: NodeJS.ErrnoException, upperContents: string[]) => {
+			this._lowerDir.readdir(path, options, (err: NodeJS.ErrnoException, lowerContents: string[]) => {
+
+			})
+		})
 	}
 
 	/**
@@ -667,9 +674,11 @@ export default class EncryptedFS {
 	 */
 	readdirSync(
 		path: PathLike,
-		options: FileOptions | undefined = undefined
+		options: {encoding: BufferEncoding, withFileTypes?: false} | undefined = undefined
 	): string[] {
-		return this._upperDir.readdirSync(path, options)
+		const upperDirContents = this._upperDir.readdirSync(path, options)
+		const lowerDirContents = this._lowerDir.readdirSync(path, options)
+		return _.union(upperDirContents, lowerDirContents)
 	}
 	
 	/**
@@ -741,7 +750,12 @@ export default class EncryptedFS {
 		path: PathLike,
 		callback: (exists: boolean) => void
 	): void {
-		return this._upperDir.exists(path, callback=callback)
+		// TODO: make sure upper and lower directories agree
+		return this._upperDir.exists(path, (existsInUpper) => {
+			this._lowerDir.exists(path, (existsInLower) => {
+				callback(existsInLower || existsInUpper)
+			})
+		})
 	}
 	
 	/**
@@ -752,7 +766,8 @@ export default class EncryptedFS {
 	existsSync(
 		path: PathLike
 	): boolean {
-		return this._upperDir.existsSync(path)
+		// TODO: make sure upper and lower directories agree
+		return this._upperDir.existsSync(path) || this._lowerDir.existsSync(path)
 	}
 	
 	/**
@@ -1965,10 +1980,11 @@ export default class EncryptedFS {
 		return optionsFinal
 	}
 
-	_isCharacterEncoding(encoding: string|null|undefined): encoding is CharacterEncoding {
+	_isCharacterEncoding(encoding: string | null | undefined): encoding is BufferEncoding {
 		if (encoding == null || encoding == undefined) {
-			return true
+			return false
 		}
+
 		return ['ascii' , 'utf8' , 'utf-8' , 'utf16le' , 'ucs2' , 'ucs-2' , 'base64' , 'latin1' , 'binary' , 'hex'].includes(encoding)
 	}
 

@@ -1,11 +1,17 @@
 // @flow
 import fs from 'fs-extra'
 import crypto from 'crypto'
+import chalk from 'chalk'
 import process from 'process'
-import openpgp from 'openpgp'
 import Path from 'path'
 import { promisify } from 'util'
 import { rejects } from 'assert'
+import { resolve } from 'dns'
+
+// js imports
+const kbpgp = require('kbpgp')
+var F = kbpgp["const"].openpgp;
+const zxcvbn = require('zxcvbn')
 
 // TODO: flow type annotations
 // TODO: funciton docs
@@ -25,6 +31,7 @@ import { rejects } from 'assert'
 // changes for compositional code. KeyManager, returns a 'Key' instance. There can be difference classes for both
 // symm and asymm. Cryptor can then take these Key classes, which expose the crytpo functions. So even if the
 // crypto library changes, Cryptor doesn't have to cahnge and neither does polykey.
+
 type KeyPair = {
   private: string,
   public: string
@@ -33,35 +40,71 @@ type KeyPair = {
 export default class KeyManager {
   // TODO: wouldn't keymanager have many sym keys keys to look after?
   _keyPair: KeyPair = {private: '', public: ''}
+  _identity: Object | undefined = undefined
   _key!: Buffer
   _salt!: Buffer
   _passphrase!: string
-  _storePath: string = '~/.polykey/'
-  constructor() {
+  _storePath: string
+  constructor(
+    polyKeyPath: string = '~/.polykey/'
+  ) {
+    this._storePath = polyKeyPath
   }
 
   // return {private: string, public: string}
   async generateKeyPair(name: string, email: string, passphrase: string, numBits: number = 4096): Promise<KeyPair> {
+    // Validate passphrase
+    const passValidation = zxcvbn(passphrase)
+    // The following is an arbitrary delineation of desirable scores
+    if (passValidation.score < 2) {
+      console.log(chalk.red(`passphrase score for new keypair is below 2!`))
+    } else if (passValidation.score <4) {
+      console.log(chalk.yellow(`passphrase score for new keypair is below 4!`))
+    } else {
+      console.log(chalk.green(`passphrase score for new keypair is 4 or above.`))
+    }
+    
+
+    // Define options
     var options = {
-      userIds: [{ name: name, email: email }], // multiple user IDs
-      numBits: 4096,                                            // RSA key size
-      passphrase: passphrase
+      userid: `${name} <${email}>`,
+      primary: {
+        nbits: 4096,
+        flags: F.certify_keys | F.sign_data | F.auth | F.encrypt_comm | F.encrypt_storage,
+        expire_in: 0  // never expire
+      },
+      subkeys: [
+        // {
+        //   nbits: 2048,
+        //   flags: F.sign_data,
+        //   expire_in: 86400 * 365 * 8 // 8 years
+        // }
+      ]
     }
 
     this._passphrase = passphrase
 
     return new Promise<KeyPair>((resolve, reject) => {
-      openpgp.generateKey(options).then((key) => {
-        const privkey = key.privateKeyArmored // '-----BEGIN PGP PRIVATE KEY BLOCK ... '
-        const pubkey = key.publicKeyArmored   // '-----BEGIN PGP PUBLIC KEY BLOCK ... '
-
-        const keypair = { private: privkey, public: pubkey }
-
-        resolve(keypair)
-        // TODO: revocation signature?
-        // var revocationSignature = key.revocationSignature // '-----BEGIN PGP PUBLIC KEY BLOCK ... '
-      }).catch((err) => {
-        reject(err)
+      kbpgp.KeyManager.generate(options, (err, identity) => {
+        console.log(`identity =`);
+        console.log(identity);
+        
+        identity.sign({}, (err) => {
+          // Export pub key first
+          identity.export_pgp_public({}, (err, pubKey) => {
+            // Finally export priv key
+            identity.export_pgp_private({passphrase: passphrase}, (err, privKey) => {
+              // Resolve to parent promise
+              const keypair = { private: privKey, public: pubKey }
+              this._keyPair = keypair
+              // Set the new identity
+              this._identity = identity
+              resolve(keypair)
+              // TODO: revocation signature?
+              // var revocationSignature = key.revocationSignature // '-----BEGIN PGP PUBLIC KEY BLOCK ... '
+            })
+          })
+        })
       })
     })
   }
@@ -76,6 +119,34 @@ export default class KeyManager {
 
   getPrivateKey(): string {
     return this._keyPair.private
+  }
+
+  async loadIdentity(passphrase: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      kbpgp.KeyManager.import_from_armored_pgp({amored: this.getPublicKey()}, (err, identity) => {
+        if (!err) {
+          identity.merge_pgp_private({
+            armored: this.getPrivateKey()
+          }, function(err) {
+            if (!err) {
+              if (identity.is_pgp_locked()) {
+                identity.unlock_pgp({
+                  passphrase: passphrase
+                }, function(err) {
+                  if (!err) {
+                    this._identity = identity
+                    console.log(`identity:`)
+                    console.log(this._identity)
+                    resolve()
+                  }
+                })
+              }
+            }
+            reject(err)
+          })
+        }
+      })
+    })
   }
 
   async loadPrivateKey(path: string, passphrase: string = ''): Promise<void> {
@@ -205,13 +276,13 @@ export default class KeyManager {
       if (profileExists) {
         console.warn(`Writing to already existing profile: ${name}. Existing data will be overwritten.`)
       } else {
-        await fs.mkdirsSync(profilePath)
+        fs.mkdirsSync(profilePath)
       }
       if (storeKey && this._key) {
-        await fs.writeFileSync(Path.join(profilePath, 'key'), this._key)
+        fs.writeFileSync(Path.join(profilePath, 'key'), this._key)
       }
       if (this._salt) {
-        await fs.writeFileSync(Path.join(profilePath, 'salt'), this._key)
+        fs.writeFileSync(Path.join(profilePath, 'salt'), this._key)
       }
     } catch (err) {
       throw Error('Writing profile')
@@ -235,6 +306,66 @@ export default class KeyManager {
     } catch (err) {
       throw Error('Loading profile key from disk')
     }
+  }
+
+  // Sign data
+  signData(data: Buffer | string): Promise<Buffer> {
+    return new Promise<Buffer>((resolve, reject) => {
+      const params = {
+        msg: data,
+        sign_with: this._identity
+      }
+      kbpgp.box(params, (err: Error, result_string: string, result_buffer: Buffer) => {
+        console.log(result_buffer)
+        if (err) {
+          reject(err)
+        }
+        
+        resolve(result_buffer)
+      })
+    })
+  }
+
+  // Verify data
+  verifyData(data: Buffer | string): Promise<Buffer> {
+    return new Promise<Buffer>((resolve, reject) => {
+      var ring = new kbpgp.keyring.KeyRing;
+      ring.add_key_manager(this._identity)
+      kbpgp.unbox({keyfetch: ring, armored: data }, (err, literals) => {
+        if (err != null) {
+          reject(err)
+        } else {
+          console.log("decrypted message")
+          console.log(literals[0].toString())
+          resolve(literals[0])
+          // var ds = km = null;
+          // ds = literals[0].get_data_signer();
+          // if (ds) { km = ds.get_key_manager(); }
+          // if (km) {
+          //   console.log("Signed by PGP fingerprint");
+          //   console.log(km.get_pgp_fingerprint().toString('hex'));
+          // }
+        }
+      })
+
+
+
+
+
+
+      const params = {
+        msg: data,
+        sign_with: this._identity
+      }
+      kbpgp.box(params, (err: Error, result_string: string, result_buffer: Buffer) => {
+        console.log(result_buffer)
+        if (err) {
+          reject(err)
+        }
+        
+        resolve(result_buffer)
+      })
+    })
   }
 
   getKey(): Buffer {
