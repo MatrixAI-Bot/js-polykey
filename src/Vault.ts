@@ -1,9 +1,9 @@
 // $FlowFixMe
 import hkdf from 'futoin-hkdf'
 // $FlowFixMe
-import EFS from '../encryptedfs-tmp/EncryptedFS'
 import Path from 'path'
-import { GeneralFileSystem } from './Polykey'
+import EncryptedFS from '../encryptedfs-tmp/EncryptedFS'
+import fs from 'fs'
 
 const vfs = require('virtualfs')
 
@@ -12,23 +12,32 @@ export default class Vault {
   _key: Buffer
   _keyLen: number
   _name: string
-  _fs: GeneralFileSystem
+  _fs: EncryptedFS
   _secrets: Map<string, any>
   _vaultPath: string
   constructor(
     name: string,
     symKey: Buffer,
-    baseDir: string,
-    fileSystem: GeneralFileSystem
+    baseDir: string
   ) {
     // how do we create pub/priv key pair?
     // do we use the same gpg pub/priv keypair
-    const vfsInstance = new vfs.VirtualFS
     this._keyLen = 32
     this._key = this._genSymKey(symKey, this._keyLen)
-    this._fs = fileSystem
+    // Set filesystem
+    const vfsInstance = new vfs.VirtualFS
+    this._fs = new EncryptedFS(
+      symKey,
+      vfsInstance,
+      vfsInstance,
+      fs,
+      process
+    )
+
     this._name = name
     this._vaultPath = Path.join(baseDir, name)
+    // make the vault directory
+    this._fs.mkdirSync(this._vaultPath, {recursive: true})
     this._secrets = new Map()
 
     this._loadSecrets()
