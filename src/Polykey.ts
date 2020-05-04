@@ -2,60 +2,71 @@ import fs, { PathLike } from 'fs'
 import Path from 'path'
 import os from 'os'
 import Vault from './Vault'
-import crypto from 'crypto'
+import crypto, { sign } from 'crypto'
 import jsonfile from 'jsonfile'
 import _ from 'lodash'
 import KeyManager from './KeyManager'
 import EncryptedFS from '../encryptedfs-tmp/EncryptedFS'
 
-type CharacterEncoding = 'ascii' | 'utf8' | 'utf-8' | 'utf16le' | 'ucs2' | 'ucs-2' | 'base64' | 'latin1' | 'binary' | 'hex' | undefined
-export interface GeneralFileSystem {
-  exists(path: string, callback: (exists: boolean) => void): void
-  existsSync(path: string): boolean
-  mkdir(path: string, options: {recursive: boolean} | undefined, callback: (err: NodeJS.ErrnoException | null, path: string) => void): void
-  mkdirSync(path: string, options: {recursive: boolean} | undefined): void
-  rmdirSync(path: string, options?: {recursive: boolean} | undefined): void
-  readFileSync(path: string, options: {encoding?: string | undefined, flag?: string | undefined} | undefined): Buffer | string
-  open(path: string, flags: string, mode: number, callback: (err: NodeJS.ErrnoException | null, fd: number | undefined) => void): void
-	openSync(path: string, flags: string, mode?: number): number
-	// access(path: PathLike, mode: number | undefined, callback: NoParamCallback): void
-	// accessSync(path: PathLike, mode?: number | undefined): void
-	// close(fd: number, callback: NoParamCallback): void
-	// closeSync(fd: number): void
-  // rmdirSync(path: string, options: {recursive: boolean} | undefined): void
-  readdirSync(path: string, options: {encoding: CharacterEncoding, withFileTypes?: boolean} | undefined): string[]
-	write(fd: number, buffer: Buffer, offset: number, length: number, position: number, callback: (err: NodeJS.ErrnoException | null, written: number, buffer: Buffer) => void): void
-	writeSync(fd: number, buffer: Buffer, offset?: number, length?: number, position?: number): number
-	// open(path: PathLike, flags: string | number, mode: string | number | null | undefined, callback: (err: NodeJS.ErrnoException | null, fd: number) => void): void
-	// openSync(path: PathLike, flags: string | number, mode?: string | number | null | undefined): number
-	// exists(path: PathLike, callback: (exists: boolean) => void): void
-	// existsSync(path: PathLike): boolean
-	// read<TBuffer extends NodeJS.ArrayBufferView>(fd: number, buffer: TBuffer, offset: number, length: number, position: number | null, callback: (err: NodeJS.ErrnoException | null, bytesRead: number, buffer: TBuffer) => void): void
-	// readSync(fd: number, buffer: NodeJS.ArrayBufferView, offset: number, length: number, position: number | null): number
-	// appendFile(file: string | number | Buffer | URL, data: any, options: FileOptions, callback: NoParamCallback): void
-	// appendFileSync(file: string | number | Buffer | URL, data: any, options?: string | FileOptions | null | undefined): void
-	// unlink(path: PathLike, callback: NoParamCallback): void
-	// unlinkSync(path: PathLike): void
-	// open(path: PathLike, flags: string | number, mode: string | number | null | undefined, callback: (err: NodeJS.ErrnoException | null, fd: number) => void): void
-	// openSync(path: PathLike, flags: string | number, mode?: string | number | null | undefined): number
-	// readlink(path: PathLike, ...args: Array<any>): void
-	// readlinkSync(path: PathLike, options?: FileOptions): string | Buffer
-	// symlink(dstPath: PathLike, srcPath: PathLike, ...args: Array<any>): void
-	// symlinkSync(dstPath: PathLike, srcPath: PathLike, type: "dir" | "file" | "junction" | null | undefined): void
-	// link(existingPath: PathLike, newPath: PathLike, callback: NoParamCallback): void
-	// linkSync(existingPath: PathLike, newPath: PathLike): void
-	// fstat(fdIndex: number, callback: (err: NodeJS.ErrnoException | null, stat: Stat) => void): void
-	// fstatSync(fdIndex: number): Stat
-	// mkdtemp(prefix: String, options: { encoding: CharacterEncoding } | CharacterEncoding | null | undefined, callback: (err: NodeJS.ErrnoException | null, path: string | Buffer) => void): void
-	// mkdtempSync(prefix: String, options: { encoding: CharacterEncoding } | CharacterEncoding | null | undefined): string | Buffer
-	// chmod(path: PathLike, mode: number, callback: NoParamCallback): void
-	// chmodSync(path: PathLike, mode: number): void
-	// chown(path: PathLike, uid: number, gid: number, callback: NoParamCallback): void
-	// chownSync(path: PathLike, uid: number, gid: number): void
-	// utimes(path: PathLike, atime: number | string | Date, mtime: number | string | Date, callback: NoParamCallback): void
-	// utimesSync(path: PathLike, atime: number | string | Date, mtime: number | string | Date): void
-}
+
+// type FileOptions = { 
+// 	encoding?: BufferEncoding | undefined, 
+// 	mode?: number | undefined, 
+// 	flag?: string | undefined
+// }
+// type CharacterEncoding = 'ascii' | 'utf8' | 'utf-8' | 'utf16le' | 'ucs2' | 'ucs-2' | 'base64' | 'latin1' | 'binary' | 'hex' | undefined
+// export interface GeneralFileSystem {
+//   exists(path: string, callback: (exists: boolean) => void): void
+//   existsSync(path: string): boolean
+//   mkdir(path: string, options: {recursive: boolean} | undefined, callback: (err: NodeJS.ErrnoException | null, path: string) => void): void
+//   mkdirSync(path: string, options: {recursive: boolean} | undefined): void
+//   rmdirSync(path: string, options?: {recursive: boolean} | undefined): void
+//   readFileSync(path: string, options: {encoding?: string | undefined, flag?: string | undefined} | undefined): Buffer | string
+//   open(path: string, flags: string, mode: number, callback: (err: NodeJS.ErrnoException | null, fd: number | undefined) => void): void
+//   openSync(path: string, flags: string, mode?: number): number
+// 	mkdtemp(prefix: String, options: { encoding: BufferEncoding } | BufferEncoding | null | undefined, callback: (err: NodeJS.ErrnoException | null, path: string | Buffer) => void): void
+// 	mkdtempSync(prefix: String, options: { encoding: BufferEncoding } | BufferEncoding | null | undefined): string | Buffer
+// 	// access(path: PathLike, mode: number | undefined, callback: NoParamCallback): void
+// 	// accessSync(path: PathLike, mode?: number | undefined): void
+// 	// close(fd: number, callback: NoParamCallback): void
+// 	// closeSync(fd: number): void
+//   // rmdirSync(path: string, options: {recursive: boolean} | undefined): void
+//   writeFile(path: string | number, data: Buffer | string, options: FileOptions, callback: (err: NodeJS.ErrnoException | null) => void): Promise<void>
+//   writeFileSync(path: PathLike | number, data: string | Buffer, options?: FileOptions): void
+//   readdirSync(path: string, options: {encoding: CharacterEncoding, withFileTypes?: boolean} | undefined): string[]
+// 	write(fd: number, buffer: Buffer, offset: number, length: number, position: number, callback: (err: NodeJS.ErrnoException | null, written: number, buffer: Buffer) => void): void
+// 	writeSync(fd: number, buffer: Buffer, offset?: number, length?: number, position?: number): number
+// 	// open(path: PathLike, flags: string | number, mode: string | number | null | undefined, callback: (err: NodeJS.ErrnoException | null, fd: number) => void): void
+// 	// openSync(path: PathLike, flags: string | number, mode?: string | number | null | undefined): number
+// 	// exists(path: PathLike, callback: (exists: boolean) => void): void
+// 	// existsSync(path: PathLike): boolean
+// 	// read<TBuffer extends NodeJS.ArrayBufferView>(fd: number, buffer: TBuffer, offset: number, length: number, position: number | null, callback: (err: NodeJS.ErrnoException | null, bytesRead: number, buffer: TBuffer) => void): void
+// 	// readSync(fd: number, buffer: NodeJS.ArrayBufferView, offset: number, length: number, position: number | null): number
+// 	// appendFile(file: string | number | Buffer | URL, data: any, options: FileOptions, callback: NoParamCallback): void
+// 	// appendFileSync(file: string | number | Buffer | URL, data: any, options?: string | FileOptions | null | undefined): void
+// 	// unlink(path: PathLike, callback: NoParamCallback): void
+// 	// unlinkSync(path: PathLike): void
+// 	// open(path: PathLike, flags: string | number, mode: string | number | null | undefined, callback: (err: NodeJS.ErrnoException | null, fd: number) => void): void
+// 	// openSync(path: PathLike, flags: string | number, mode?: string | number | null | undefined): number
+// 	// readlink(path: PathLike, ...args: Array<any>): void
+// 	// readlinkSync(path: PathLike, options?: FileOptions): string | Buffer
+// 	// symlink(dstPath: PathLike, srcPath: PathLike, ...args: Array<any>): void
+// 	// symlinkSync(dstPath: PathLike, srcPath: PathLike, type: "dir" | "file" | "junction" | null | undefined): void
+// 	// link(existingPath: PathLike, newPath: PathLike, callback: NoParamCallback): void
+// 	// linkSync(existingPath: PathLike, newPath: PathLike): void
+// 	// fstat(fdIndex: number, callback: (err: NodeJS.ErrnoException | null, stat: Stat) => void): void
+// 	// fstatSync(fdIndex: number): Stat
+// 	// mkdtemp(prefix: String, options: { encoding: CharacterEncoding } | CharacterEncoding | null | undefined, callback: (err: NodeJS.ErrnoException | null, path: string | Buffer) => void): void
+// 	// mkdtempSync(prefix: String, options: { encoding: CharacterEncoding } | CharacterEncoding | null | undefined): string | Buffer
+// 	// chmod(path: PathLike, mode: number, callback: NoParamCallback): void
+// 	// chmodSync(path: PathLike, mode: number): void
+// 	// chown(path: PathLike, uid: number, gid: number, callback: NoParamCallback): void
+// 	// chownSync(path: PathLike, uid: number, gid: number): void
+// 	// utimes(path: PathLike, atime: number | string | Date, mtime: number | string | Date, callback: NoParamCallback): void
+// 	// utimesSync(path: PathLike, atime: number | string | Date, mtime: number | string | Date): void
+// }
 type Metadata = {
+
   [vaultName: string]: {
     key: Buffer, tags: Array<string>
   }
@@ -73,7 +84,7 @@ const vaultKeySize = 128/8 // in bytes
 export default class Polykey {
   _polykeyDirName: string
   _polykeyPath: string
-  _fs: GeneralFileSystem
+  _fs: typeof fs
   _vaults:Map<string, Vault>
   _key: Buffer
   _pubKey: Buffer
@@ -85,13 +96,14 @@ export default class Polykey {
   // KeyManager = KeyManager
 
   constructor(
-    km: KeyManager,
     key: Buffer | string,
     keyLen: number = 32,
-    homeDir: string = os.homedir(),
-    fileSystem: GeneralFileSystem | undefined = undefined
+    km: KeyManager | undefined,
+    homeDir: string = os.homedir()
   ) {
-    this._km = km
+    
+    this._km = km || new KeyManager(this._polykeyPath)
+
     homeDir = homeDir || os.homedir()
     this._polykeyDirName = '.polykey'
     this._polykeyPath = Path.join(homeDir, this._polykeyDirName)
@@ -103,18 +115,7 @@ export default class Polykey {
       this._key = key
     }
     // Set file system
-    if (fileSystem !== undefined) {
-      this._fs = fileSystem
-    } else {
-      const vfsInstance = new (require('virtualfs')).VirtualFS
-      this._fs = new EncryptedFS(
-        this._key,
-        vfsInstance,
-        vfsInstance,
-        fs,
-        process
-      )
-    }
+    this._fs = fs
     // Initialize reamining members
     this._vaults = new Map()
     this._keySize = keyLen
@@ -217,7 +218,7 @@ export default class Polykey {
       this._metadata[vaultName] = { key: vaultKey, tags: []}
       // TODO: this methods seems a bit magical
       await this._writeMetadata()
-      const vault = new Vault(vaultName, vaultKey, this._polykeyPath, this._fs)
+      const vault = new Vault(vaultName, vaultKey, this._polykeyPath)
       this._vaults.set(vaultName, vault)
     } catch (err) {
       // Delete vault dir and garbage collect
@@ -257,8 +258,6 @@ export default class Polykey {
 
     const vaultPathExists = this._fs.existsSync(path)
     if (vaultPathExists) {
-      console.log(path)
-      
       throw(Error('Vault path could not be destroyed!'))
     }
     const vaultEntryExists = this._vaults.has(vaultName)
@@ -305,24 +304,39 @@ export default class Polykey {
     return vault.listSecrets()
   }
 
-  signFile (path: string) {
-    // this._km.sign
+  async verifyFile(signedPath: string, path: string): Promise<void> {
+    const signedBuffer = this._fs.readFileSync(signedPath, undefined)
+    const verifiedBuffer = await this._km.verifyData(signedBuffer)
+    fs.writeFileSync(path, verifiedBuffer)
+  }
+
+  async signFile(path: string, signedPath: string): Promise<void> {
+    try {
+      const buffer = fs.readFileSync(path, undefined)
+      console.log(`buffer= ${buffer}`);
+      
+      const signedBuffer = await this._km.signData(buffer)
+      console.log(`signedBuffer= ${signedBuffer}`);
+      fs.writeFileSync(signedPath, signedBuffer)
+    } catch (err) {
+      console.log(`err: ${err}`);
+      
+    }
+  }
+
+  tagVault() {
 
   }
 
-  tagVault () {
+  untagVault() {
 
   }
 
-  untagVault () {
+  shareVault() {
 
   }
 
-  shareVault () {
-
-  }
-
-  unshareVault () {
+  unshareVault() {
 
   }
 
@@ -350,7 +364,7 @@ export default class Polykey {
       throw err
     }
     const vaultKey = this._metadata[vaultName].key
-    const vault = new Vault(vaultName, vaultKey, this._polykeyPath, this._fs)
+    const vault = new Vault(vaultName, vaultKey, this._polykeyPath)
     this._vaults.set(vaultName, vault)
     return vault
   }
@@ -358,6 +372,7 @@ export default class Polykey {
   _initSync(): void {
     // check if .polykey exists
     //  make folder if doesn't
+  
     if (!this._fs.existsSync(this._polykeyPath)) {
       this._fs.mkdirSync(this._polykeyPath, {recursive: true})
       const metadataTemplate = {}
@@ -372,9 +387,13 @@ export default class Polykey {
       if (this._metadata.hasOwnProperty(vaultName)) {
         const path = Path.join(this._polykeyPath, vaultName)
         if (this._fileExistsSync(path)) {
-          const vaultKey = this._metadata[vaultName].key
-          const vault = new Vault(vaultName, vaultKey, this._polykeyPath, this._fs)
-          this._vaults.set(vaultName, vault)
+          try {
+            const vaultKey = Buffer.from(this._metadata[vaultName].key)
+            const vault = new Vault(vaultName, vaultKey, this._polykeyPath)
+            this._vaults.set(vaultName, vault)
+          } catch (err) {
+            console.log(`Failed to initialize vault '${vaultName}: ${err.message}'`);
+          }
         }
       }
     }

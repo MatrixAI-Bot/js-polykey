@@ -86,9 +86,6 @@ export default class KeyManager {
 
     return new Promise<KeyPair>((resolve, reject) => {
       kbpgp.KeyManager.generate(options, (err, identity) => {
-        console.log(`identity =`);
-        console.log(identity);
-        
         identity.sign({}, (err) => {
           // Export pub key first
           identity.export_pgp_public({}, (err, pubKey) => {
@@ -135,8 +132,6 @@ export default class KeyManager {
                 }, function(err) {
                   if (!err) {
                     this._identity = identity
-                    console.log(`identity:`)
-                    console.log(this._identity)
                     resolve()
                   }
                 })
@@ -150,17 +145,25 @@ export default class KeyManager {
   }
 
   async loadPrivateKey(path: string, passphrase: string = ''): Promise<void> {
-    const key = (await fs.readFile(path)).toString()
-    this._keyPair.private = key
-
-    if (passphrase) {
-      this._passphrase = passphrase
+    try {
+      const key = (await fs.readFile(path)).toString()
+      this._keyPair.private = key
+  
+      if (passphrase) {
+        this._passphrase = passphrase
+      }
+    } catch (err) {
+      throw(err)
     }
   }
 
   async loadPublicKey(path: string): Promise<void> {
-    const key = (await fs.readFile(path)).toString()
-    this._keyPair.public = key
+    try {
+      const key = (await fs.readFile(path)).toString()
+      this._keyPair.public = key
+    } catch (err) {
+      throw(err)
+    }
   }
 
   async loadKeyPair(privPath: string, pubPath: string, passphrase: string = '') {
@@ -321,7 +324,7 @@ export default class KeyManager {
           reject(err)
         }
         
-        resolve(result_buffer)
+        resolve(Buffer.from(result_buffer))
       })
     })
   }
@@ -331,13 +334,15 @@ export default class KeyManager {
     return new Promise<Buffer>((resolve, reject) => {
       var ring = new kbpgp.keyring.KeyRing;
       ring.add_key_manager(this._identity)
-      kbpgp.unbox({keyfetch: ring, armored: data }, (err, literals) => {
+      const params = {
+          raw: kbpgp.Buffer.from(data),
+          keyfetch: ring
+      }
+      kbpgp.unbox(params, (err, literals) => {
         if (err != null) {
           reject(err)
         } else {
-          console.log("decrypted message")
-          console.log(literals[0].toString())
-          resolve(literals[0])
+          resolve(literals[0].data)
           // var ds = km = null;
           // ds = literals[0].get_data_signer();
           // if (ds) { km = ds.get_key_manager(); }
@@ -346,24 +351,6 @@ export default class KeyManager {
           //   console.log(km.get_pgp_fingerprint().toString('hex'));
           // }
         }
-      })
-
-
-
-
-
-
-      const params = {
-        msg: data,
-        sign_with: this._identity
-      }
-      kbpgp.box(params, (err: Error, result_string: string, result_buffer: Buffer) => {
-        console.log(result_buffer)
-        if (err) {
-          reject(err)
-        }
-        
-        resolve(result_buffer)
       })
     })
   }
