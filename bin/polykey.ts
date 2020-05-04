@@ -174,8 +174,60 @@ vaultDestroy
         }
     })
 
-// // Add subcommands
-// program.addCommand()
+
+/*******************************************/
+// sign
+const sign = polykey.command('sign')
+sign
+    .description('signing operations')
+    .requiredOption('-i, --input-path <inputPath>', 'path to file to be signed')
+    .requiredOption('-o, --output-path <outputPath>', 'path to the signed file')
+    .action(async (options) => {
+        const inputPath = options.inputPath
+        const outputPath = options.outputPath
+        console.log(inputPath)
+        console.log(outputPath)
+        console.log(process.cwd());
+        
+        
+        try {
+            await pk.signFile(inputPath, outputPath)
+            console.log(`file created at '${outputPath}'`);
+        } catch (err) {
+            console.log(chalk.red(`Failed to sign ${inputPath}: ${err}`));
+        }
+    })
+
+const key = process.env.PK_KEY
+
+if (key) {
+    initPolyKey(key)
+    polykey.parse(process.argv)
+} else {
+    inquirer
+        .prompt([
+            {
+                type: 'password',
+                name: 'key',
+                message: 'Please provide PolyKey password'
+            }
+        ])
+        .then(answers => {
+            const key = answers.key
+            // set password
+            process.env.PK_KEY = key
+            // initialization
+            initPolyKey(key)
+            polykey.parse(process.argv)
+        })
+        .catch(error => {
+            if (error.isTtyError) {
+
+            } else {
+
+            }
+        })
+}
 
 // allow commander to parse `process.argv`
 program.parse(process.argv);
