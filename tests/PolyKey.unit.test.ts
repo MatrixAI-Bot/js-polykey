@@ -7,6 +7,7 @@ import Polykey from '../src/Polykey'
 import Library from '../src/Polykey'
 
 // js imports
+const kbpgp = require('kbpgp')
 const vfs = require('virtualfs')
 
 function randomString(): string {
@@ -118,8 +119,7 @@ describe('PolyKey class', () => {
 			vaultName = `Vault-${randomString()}`
 			// Create private keys (async)
 			pk._km.generateKeyPair('John Smith', 'john.smith@gmail.com', 'passphrase').then((keypair) => {
-				console.log(`keypair: ${keypair}`)
-				console.log(keypair)
+				expect(keypair).not.toBeNull()
 				done()
 			})
 		}, 200000)
@@ -127,17 +127,25 @@ describe('PolyKey class', () => {
 		test('can sign and verify strings', async done => {
 			const originalData = Buffer.from('I am to be signed')
 			const signedData = await pk._km.signData(originalData)
-
-			console.log(`signedData`)
-			console.log(signedData)
-			console.log(signedData.toString('utf8'))
+			const verifiedData = await pk._km.verifyData(signedData)
+			expect(originalData).toEqual(verifiedData)
+			done()
 			
-			// // Verify
-			// const verifiedData = await pk._km.verifyData(signedData)
+		}, 200000)
 
-			// console.log(verifiedData)
-			
-
+		test('can sign and verify files', async done => {
+			const originalData = Buffer.from('I am to be signed')
+			const filePath = `${tempDir}/file`
+			pk._fs.writeFileSync(filePath, originalData)
+			// Sign file
+			const signedPath = `${tempDir}/file.signed`
+			await pk.signFile(filePath, signedPath)
+			// Verify file
+			const verifiedPath = `${tempDir}/file.signed`
+			await pk.verifyFile(signedPath, verifiedPath)
+			// Confirm equality
+			const verifiedBuffer = pk._fs.readFileSync(verifiedPath, undefined)
+			expect(verifiedBuffer).toEqual(originalData)
 			done()
 			
 		}, 200000)
