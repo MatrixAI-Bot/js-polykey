@@ -30,13 +30,13 @@ const vfs = require('virtualfs')
 
 export default class KeyManager {
   // TODO: wouldn't keymanager have many sym keys keys to look after?
-  _keyPair: KeyPair = {private: '', public: ''}
-  _identity: Object | undefined = undefined
-  _key!: Buffer
-  _salt!: Buffer
-  _passphrase!: string
-  _storePath: string
-  _fs: typeof fs
+  private _keyPair: KeyPair = {private: '', public: '', passphrase: ''}
+  private _identity: Object | undefined = undefined
+  private _key!: Buffer
+  private _salt!: Buffer
+  private _passphrase!: string
+  private _storePath: string
+  private _fs: typeof fs
   constructor(
     polyKeyPath: string = '~/.polykey/'
   ) {
@@ -81,15 +81,26 @@ export default class KeyManager {
     return new Promise<KeyPair>((resolve, reject) => {
       kbpgp.KeyManager.generate(options, (err, identity) => {
         identity.sign({}, (err) => {
+          if (err) {
+            reject(err)
+          }
           // Export pub key first
           identity.export_pgp_public({}, (err, pubKey) => {
+            if (err) {
+              reject(err)
+            }
             // Finally export priv key
             identity.export_pgp_private({passphrase: passphrase}, (err, privKey) => {
+              if (err) {
+                reject(err)
+              }
               // Resolve to parent promise
-              const keypair = { private: privKey, public: pubKey }
+              const keypair = { private: privKey, public: pubKey, passphrase: passphrase }
               this._keyPair = keypair
               // Set the new identity
               this._identity = identity
+              console.log(identity);
+              
               resolve(keypair)
               // TODO: revocation signature?
               // var revocationSignature = key.revocationSignature // '-----BEGIN PGP PUBLIC KEY BLOCK ... '
@@ -112,36 +123,15 @@ export default class KeyManager {
     return this._keyPair.private
   }
 
-  async importIdentity(passphrase: string): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      kbpgp.KeyManager.import_from_armored_pgp({amored: this.getPublicKey()}, (err, identity) => {
-        if (!err) {
-          identity.merge_pgp_private({
-            armored: this.getPrivateKey()
-          }, function(err) {
-            if (!err) {
-              if (identity.is_pgp_locked()) {
-                identity.unlock_pgp({
-                  passphrase: passphrase
-                }, function(err) {
-                  if (!err) {
-                    this._identity = identity
-                    resolve()
-                  }
-                })
-              }
-            }
-            reject(err)
-          })
-        }
-      })
-    })
-  }
-
-  async loadPrivateKey(path: string, passphrase: string = ''): Promise<void> {
+  async loadPrivateKey(privateKey: string | Buffer, passphrase: string = ''): Promise<void> {
     try {
-      const key = (await fs.readFile(path)).toString()
-      this._keyPair.private = key
+      let keyBuffer: Buffer
+      if (typeof privateKey === 'string') {
+        keyBuffer = (await fs.readFile(privateKey))
+      } else {
+        keyBuffer = privateKey
+      }
+      this._keyPair.private = keyBuffer.toString()
   
       if (passphrase) {
         this._passphrase = passphrase
@@ -151,18 +141,61 @@ export default class KeyManager {
     }
   }
 
-  async loadPublicKey(path: string): Promise<void> {
+  async loadPublicKey(publicKey: string | Buffer): Promise<void> {
     try {
-      const key = (await fs.readFile(path)).toString()
-      this._keyPair.public = key
+      let keyBuffer: Buffer
+      if (typeof publicKey === 'string') {
+        keyBuffer = (await fs.readFile(publicKey))
+      } else {
+        keyBuffer = publicKey
+      }
+      this._keyPair.public = keyBuffer.toString()
     } catch (err) {
       throw(err)
     }
   }
 
-  async loadKeyPair(privPath: string, pubPath: string, passphrase: string = '') {
-    await this.loadPrivateKey(privPath)
-    await this.loadPublicKey(pubPath)
+  async loadIdentity(passphrase: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const pubKey: string = this.getPublicKey()
+      const privKey: string = this.getPrivateKey()
+      
+      kbpgp.KeyManager.import_from_armored_pgp({armored: pubKey}, (err, identity) => {
+        if (err) {
+          reject(err)
+        }
+
+        identity.merge_pgp_private({
+          armored: privKey
+        }, (err) => {
+          if (err) {
+            reject(err)
+          }
+
+          if (identity.is_pgp_locked()) {
+            identity.unlock_pgp({
+              passphrase: passphrase
+            }, (err) => {
+              if (err) {
+                reject(err)
+              }
+
+              this._identity = identity
+              resolve()
+            })
+          } else {
+            this._identity = identity
+            resolve()
+          }
+        })
+      })
+    })
+  }
+
+  async loadKeyPair(privateKey: string | Buffer, publicKey: string | Buffer, passphrase: string = '') {
+    await this.loadPrivateKey(privateKey)
+    await this.loadPublicKey(publicKey)
+    await this.loadIdentity(passphrase)
 
     if (passphrase) {
       this._passphrase
@@ -305,46 +338,89 @@ export default class KeyManager {
     }
   }
 
-  // Sign data
-  signData(data: Buffer | string): Promise<Buffer> {
-    return new Promise<Buffer>((resolve, reject) => {
-      const params = {
-        msg: data,
-        sign_with: this._identity
-      }
-      kbpgp.box(params, (err: Error, result_string: string, result_buffer: Buffer) => {
-        console.log(result_buffer)
+  async getIdentityFromPublicKey(pubKey: Buffer): Promise<Object> {
+    return new Promise<Object>((resolve, reject) => {
+      kbpgp.KeyManager.import_from_armored_pgp({armored: pubKey}, (err, identity) => {
         if (err) {
           reject(err)
         }
-        
+        resolve(identity)
+      })
+    })
+  }
+
+  async getIdentityFromPrivateKey(privKey: Buffer, passphrase: string): Promise<Object> {
+    return new Promise<Object>((resolve, reject) => {
+      kbpgp.KeyManager.import_from_armored_pgp({armored: privKey}, (err, identity) => {
+        if (err) {
+          reject(err)
+        }
+        if (identity.is_pgp_locked()) {
+          identity.unlock_pgp({
+            passphrase: passphrase
+          }, (err) => {
+            if (err) {
+              reject(err)
+            }
+            resolve(identity)
+          });
+        } else {
+          resolve(identity)
+        }
+      })
+    })
+  }
+
+  // Sign data
+  signData(data: Buffer | string, withKey: Buffer | undefined = undefined, keyPassphrase: string | undefined = undefined): Promise<Buffer> {
+    return new Promise<Buffer>(async (resolve, reject) => {
+      let resolvedIdentity: Object
+      if (withKey !== undefined) {
+        if (keyPassphrase === undefined) {
+          reject(Error('passphrase for private key was not provided'))
+        }
+        resolvedIdentity = await this.getIdentityFromPrivateKey(withKey, keyPassphrase!)
+      } else if (this._identity !== undefined) {
+        resolvedIdentity = this._identity
+      } else {
+        throw(Error('no identity available for signing'))
+      }
+      const params = {
+        msg: data,
+        sign_with: resolvedIdentity
+      }
+      kbpgp.box(params, (err: Error, result_string: string, result_buffer: Buffer) => {
+        if (err) {
+          reject(err)
+        }
         resolve(Buffer.from(result_buffer))
       })
     })
   }
 
   // Verify data
-  verifyData(data: Buffer | string): Promise<Buffer> {
-    return new Promise<Buffer>((resolve, reject) => {
+  verifyData(data: Buffer | string, withKey: Buffer | undefined = undefined): Promise<Buffer> {
+    return new Promise<Buffer>(async (resolve, reject) => {
       var ring = new kbpgp.keyring.KeyRing;
+      let resolvedIdentity: Object
+      if (withKey !== undefined) {
+        resolvedIdentity = await this.getIdentityFromPublicKey(withKey)
+      } else if (this._identity !== undefined) {
+        resolvedIdentity = this._identity
+      } else {
+        throw(Error('no identity available for signing'))
+      }
+      
       ring.add_key_manager(this._identity)
       const params = {
           raw: kbpgp.Buffer.from(data),
           keyfetch: ring
       }
       kbpgp.unbox(params, (err, literals) => {
-        if (err != null) {
+        if (err) {
           reject(err)
-        } else {
-          resolve(literals[0].data)
-          // var ds = km = null;
-          // ds = literals[0].get_data_signer();
-          // if (ds) { km = ds.get_key_manager(); }
-          // if (km) {
-          //   console.log("Signed by PGP fingerprint");
-          //   console.log(km.get_pgp_fingerprint().toString('hex'));
-          // }
         }
+        resolve(literals[0].data)
       })
     })
   }

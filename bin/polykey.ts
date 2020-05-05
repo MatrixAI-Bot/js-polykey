@@ -278,21 +278,48 @@ vaultDestroy
 const sign = polykey.command('sign')
 sign
     .description('signing operations')
-    .requiredOption('-i, --input-path <inputPath>', 'path to file to be signed')
-    .requiredOption('-o, --output-path <outputPath>', 'path to the signed file')
+    .option('-k, --signing-key <signingKey>', 'path to key that will be used to sign files')
+    .option('-p, --key-passphrase <keyPassphrase>', 'passphrase to unlock the provided signing key')
+    .arguments('file(s) to be signed')
     .action(async (options) => {
-        const inputPath = options.inputPath
-        const outputPath = options.outputPath
-        console.log(inputPath)
-        console.log(outputPath)
-        console.log(process.cwd());
-        
-        
-        try {
-            await pk.signFile(inputPath, outputPath)
-            console.log(`file created at '${outputPath}'`);
-        } catch (err) {
-            console.log(chalk.red(`Failed to sign ${inputPath}: ${err}`));
+        const signingKeyPath = options.signingKey
+        const keyPassphrase = options.keyPassphrase
+        const filePathList = options.args.values()
+        for (const filePath of filePathList) {
+            try {
+                const signedPath = await pk.signFile(filePath, signingKeyPath, keyPassphrase)
+                console.log(chalk.green(`file '${filePath}' successfully signed at '${signedPath}'`));
+            } catch (err) {
+                console.log(chalk.red(`failed to sign '${filePath}': ${err}`));
+            }
+        }
+    })
+/*******************************************/
+// verify
+const verify = polykey.command('verify')
+verify
+    .description('verification operations')
+    .option('-k, --verifying-key <verifyingKey>', 'path to key that will be used to verify files')
+    .arguments('file(s) to be verified')
+    .action(async (options) => {
+        const signingKeyPath = options.signingKey
+        const filePathList = options.args.values()
+        for (const filePath of filePathList) {
+            try {
+                let verifiedPath = filePath
+                // Remove .sig suffix if it exists
+                if (verifiedPath.split('.').pop() === 'sig') {
+                    const temp = verifiedPath.split('.')
+                    temp.pop()
+                    verifiedPath = temp.join('.')
+                }
+                // Add .verified suffix
+                verifiedPath = `${verifiedPath}.verified`
+                await pk.verifyFile(filePath, verifiedPath, signingKeyPath)
+                console.log(chalk.green(`file '${filePath}' successfully verified at '${verifiedPath}'`));
+            } catch (err) {
+                console.log(chalk.red(`failed to sign '${filePath}': ${err}`));
+            }
         }
     })
 

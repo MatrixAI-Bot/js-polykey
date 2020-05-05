@@ -1,4 +1,5 @@
 export type KeyPair = {
     private: string,
-    public: string
+    public: string,
+    passphrase: string
 }

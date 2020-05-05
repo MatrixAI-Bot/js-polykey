@@ -1,4 +1,4 @@
-import fs, { PathLike } from 'fs'
+import fs from 'fs-extra'
 import Path from 'path'
 import os from 'os'
 import Vault from './Vault'
@@ -16,7 +16,9 @@ type Metadata = {
       key: Buffer, tags: Array<string>
     }
   }
-  keypair: KeyPair | null
+  publicKeyPath: string | null
+  privateKeyPath: string | null
+  passphrase: string | null
 }
 
 // TODO: convert sync to promises
@@ -42,13 +44,11 @@ export default class Polykey {
 
   constructor(
     key: Buffer | string,
+    km: KeyManager | undefined = undefined,
     keyLen: number = 32,
-    km: KeyManager | undefined,
     homeDir: string = os.homedir()
   ) {
-    
     this._km = km || new KeyManager(this._polykeyPath)
-
     homeDir = homeDir || os.homedir()
     this._polykeyDirName = '.polykey'
     this._polykeyPath = Path.join(homeDir, this._polykeyDirName)
@@ -66,7 +66,9 @@ export default class Polykey {
     this._keySize = keyLen
     this._metadata = {
       vaults: {},
-      keypair: null
+      publicKeyPath: null,
+      privateKeyPath: null,
+      passphrase: null
     }
     // sync with polykey directory
     this._initSync()
@@ -255,23 +257,68 @@ export default class Polykey {
     return vault.listSecrets()
   }
 
-  async verifyFile(signedPath: string, path: string): Promise<void> {
+  async verifyFile(signedPath: string, outputPath: string, publicKey: string | Buffer | undefined = undefined): Promise<void> {
+    // Get key if provided
+    let keyBuffer: Buffer | undefined
+    if (publicKey !== undefined) {
+      if (typeof publicKey === 'string') {  // Path
+        // Read in from fs
+        keyBuffer = this._fs.readFileSync(publicKey)
+      } else {  // Buffer
+        keyBuffer = publicKey
+      }
+    } else {
+      // Load keypair into KeyManager from metadata
+      const publicKeyPath = this._metadata.publicKeyPath
+      const privateKeyPath = this._metadata.privateKeyPath
+      const passphrase = this._metadata.passphrase
+      if (publicKeyPath !== null && privateKeyPath !== null && passphrase !== null) {
+        await this._km.loadKeyPair(
+          privateKeyPath,
+          publicKeyPath,
+          passphrase
+        )
+      }
+    }
     const signedBuffer = this._fs.readFileSync(signedPath, undefined)
-    const verifiedBuffer = await this._km.verifyData(signedBuffer)
-    this._fs.writeFileSync(path, verifiedBuffer)
+    const verifiedBuffer = await this._km.verifyData(signedBuffer, keyBuffer)
+    this._fs.writeFileSync(outputPath, verifiedBuffer)
   }
 
-  async signFile(path: string, signedPath: string): Promise<void> {
+  async signFile(path: string, privateKey: string | Buffer | undefined = undefined, privateKeyPassphrase: string | undefined = undefined): Promise<string> {
     try {
+      // Get key if provided
+      let keyBuffer: Buffer | undefined
+      if (privateKey !== undefined) {
+        if (typeof privateKey === 'string') {  // Path
+          // Read in from fs
+          keyBuffer = this._fs.readFileSync(privateKey)
+        } else {  // Buffer
+          keyBuffer = privateKey
+        }
+      } else {
+        // Load keypair into KeyManager from metadata
+        const publicKeyPath = this._metadata.publicKeyPath
+        const privateKeyPath = this._metadata.privateKeyPath
+        const passphrase = this._metadata.passphrase
+        if (publicKeyPath !== null && privateKeyPath !== null && passphrase !== null) {
+          await this._km.loadKeyPair(
+            privateKeyPath,
+            publicKeyPath,
+            passphrase
+          )
+        }
+      }
+      // Read file into buffer
       const buffer = this._fs.readFileSync(path, undefined)
-      console.log(`buffer= ${buffer}`);
-      
-      const signedBuffer = await this._km.signData(buffer)
-      console.log(`signedBuffer= ${signedBuffer}`);
+      // Sign the buffer
+      const signedBuffer = await this._km.signData(buffer, keyBuffer, privateKeyPassphrase)
+      // Write buffer to signed file
+      const signedPath = `${path}.sig`
       this._fs.writeFileSync(signedPath, signedBuffer)
+      return signedPath
     } catch (err) {
-      console.log(`err: ${err}`);
-      
+      throw(Error(`failed to sign file: ${err}`))
     }
   }
 
@@ -324,12 +371,13 @@ export default class Polykey {
     // Import keypair first
     // check if .polykey exists
     //  make folder if doesn't
-  
     if (!this._fs.existsSync(this._polykeyPath)) {
       this._fs.mkdirSync(this._polykeyPath, {recursive: true})
       const metadataTemplate = {
         vaults: {},
-        keypair: null
+        publicKeyPath: null,
+        privateKeyPath: null,
+        passphrase: null
       }
       jsonfile.writeFileSync(this._metadataPath, metadataTemplate)
       this._metadata = metadataTemplate
