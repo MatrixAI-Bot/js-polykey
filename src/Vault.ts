@@ -4,6 +4,8 @@ import hkdf from 'futoin-hkdf'
 import Path from 'path'
 import EncryptedFS from '../encryptedfs-tmp/EncryptedFS'
 import fs from 'fs'
+import * as git from 'isomorphic-git'
+
 
 const vfs = require('virtualfs')
 
@@ -41,6 +43,9 @@ export default class Vault {
     this._secrets = new Map()
 
     this._loadSecrets()
+
+    // initialize the vault as a git repo
+    git.init({fs: this._fs, dir: this._vaultPath})
   }
 
   _loadSecrets() {
