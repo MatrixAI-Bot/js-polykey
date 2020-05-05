@@ -16,7 +16,7 @@ let tempDir: string
 /*******************************************/
 // initialization
 function initPolyKey(
-    password: string,
+    password: string | null,
     polykeyPath: string | undefined = undefined,
     publicKeyPath: string | undefined = undefined,
     privateKeyPath: string | undefined = undefined,
@@ -24,10 +24,17 @@ function initPolyKey(
     verbose: boolean | undefined = undefined
 ) {
     try {
-        let km = new PolyKey.KeyManager(polykeyPath)
+        // Initialize polykey
+        if (password !== null) {
+            pk = new PolyKey(Buffer.from(password), undefined, undefined, polykeyPath)
+        } else if (process.env.PK_KEY !== undefined) {
+            pk = new PolyKey(Buffer.from(process.env.PK_KEY!), undefined, undefined, polykeyPath)
+        } else {
+            console.log(chalk.red('failed to initialize polykey: password was null'));
+        }
         // import keys if provided
         if (publicKeyPath !== undefined) {
-            km.loadPublicKey(publicKeyPath)
+            pk._km.loadPublicKey(publicKeyPath)
             if (verbose) {
                 console.log(chalk.green('public key successfully imported'))
             }
@@ -35,7 +42,7 @@ function initPolyKey(
         if (privateKeyPath !== undefined) {
             if (privatePassphrase !== undefined) {
                 try {
-                    km.loadPrivateKey(privateKeyPath)
+                    pk._km.loadPrivateKey(privateKeyPath)
                     if (verbose) {
                         console.log(chalk.green('private key successfully imported'))
                     }
@@ -46,10 +53,8 @@ function initPolyKey(
                 console.log(chalk.red('passphrase for private key not provided'))
             }
         }
-        // Initialize polykey
-        pk = new PolyKey(Buffer.from(password), undefined, undefined, polykeyPath)
         if (verbose) {
-            console.log(chalk.green(`PolyKey was initialized successfully at '${pk._polykeyPath}'`));
+            console.log(chalk.green(`PolyKey was initialized successfully at '${pk.polykeyPath}'`));
         }
         // Initialization of temp directory (for testing)
         tempDir = pk._fs.mkdtempSync(`${os.tmpdir}/polykeytest`, undefined).toString()
@@ -66,10 +71,9 @@ polykey
 
 /*******************************************/
 // init
-const init = polykey.command('init')
-    .description('initialize polykey')
-    // .requiredOption('-p, --password <password>', 'provide the password to polykey')
-    .option('-p, --password <password>', 'provide the password to polykey')
+const config = polykey.command('config')
+    .description('configure polykey')
+    .option('--password <password>', 'provide the password to polykey')
     .option('--public-key <publicKey>', 'provide the path to an existing public key')
     .option('--private-key <privateKey>', 'provide the path to an existing private key')
     .option('--private-passphrase <privatePassphrase>', 'provide the passphrase to the private key')
@@ -217,7 +221,7 @@ vaultCreate
         for (const vaultName of vaultNames) {
             try {
                 await pk.createVault(vaultName)
-                console.log(`vault created at ${pk._polykeyPath}/${vaultName}`);
+                console.log(`vault created at ${pk.polykeyPath}/${vaultName}`);
             } catch (err) {
                 console.log(`Failed to create vault ${vaultName}: ${err.message}`)
             }
