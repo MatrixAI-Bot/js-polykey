@@ -9,6 +9,20 @@ import KeyManager from './KeyManager'
 import EncryptedFS from '../encryptedfs-tmp/EncryptedFS'
 import { KeyPair } from './util'
 
+// js imports
+const Libp2p = require('libp2p')
+const Bootstrap = require('libp2p-bootstrap')
+const TCP = require('libp2p-tcp')
+const Mplex = require('libp2p-mplex')
+const SECIO = require('libp2p-secio')
+const PeerInfo = require('peer-info')
+const KadDHT = require('libp2p-kad-dht')
+const delay = require('delay')
+const multiaddr = require('multiaddr')
+const pipe = require('it-pipe')
+const { toBuffer } = require('it-buffer')
+const { collect } = require('streaming-iterables')
+
 
 type Metadata = {
   vaults: {
@@ -42,10 +56,12 @@ export default class Polykey {
   private _metadataPath: string
   _km: KeyManager
 
+  _node: any
+
   constructor(
     key: Buffer | string,
     km: KeyManager | undefined = undefined,
-    keyLen: number = 32,
+    keyLen: number | undefined = undefined,
     homeDir: string = os.homedir()
   ) {
     this._km = km || new KeyManager(this._polykeyPath)
@@ -63,7 +79,7 @@ export default class Polykey {
     this._fs = fs
     // Initialize reamining members
     this._vaults = new Map()
-    this._keySize = keyLen
+    this._keySize = keyLen ?? 32
     this._metadata = {
       vaults: {},
       publicKeyPath: null,
@@ -72,6 +88,7 @@ export default class Polykey {
     }
     // sync with polykey directory
     this._initSync()
+    
   }
 
   static get KeyManager() {
@@ -258,32 +275,32 @@ export default class Polykey {
   }
 
   async verifyFile(signedPath: string, outputPath: string, publicKey: string | Buffer | undefined = undefined): Promise<void> {
-    // Get key if provided
-    let keyBuffer: Buffer | undefined
-    if (publicKey !== undefined) {
-      if (typeof publicKey === 'string') {  // Path
-        // Read in from fs
-        keyBuffer = this._fs.readFileSync(publicKey)
-      } else {  // Buffer
-        keyBuffer = publicKey
+      // Get key if provided
+      let keyBuffer: Buffer | undefined
+      if (publicKey !== undefined) {
+        if (typeof publicKey === 'string') {  // Path
+          // Read in from fs
+          keyBuffer = this._fs.readFileSync(publicKey)
+        } else {  // Buffer
+          keyBuffer = publicKey
+        }
+      } else {
+        // Load keypair into KeyManager from metadata
+        const publicKeyPath = this._metadata.publicKeyPath
+        const privateKeyPath = this._metadata.privateKeyPath
+        const passphrase = this._metadata.passphrase
+        if (publicKeyPath !== null && privateKeyPath !== null && passphrase !== null) {
+          await this._km.loadKeyPair(
+            privateKeyPath,
+            publicKeyPath,
+            passphrase
+          )
+        }
       }
-    } else {
-      // Load keypair into KeyManager from metadata
-      const publicKeyPath = this._metadata.publicKeyPath
-      const privateKeyPath = this._metadata.privateKeyPath
-      const passphrase = this._metadata.passphrase
-      if (publicKeyPath !== null && privateKeyPath !== null && passphrase !== null) {
-        await this._km.loadKeyPair(
-          privateKeyPath,
-          publicKeyPath,
-          passphrase
-        )
-      }
-    }
     const signedBuffer = this._fs.readFileSync(signedPath, undefined)
     const verifiedBuffer = await this._km.verifyData(signedBuffer, keyBuffer)
     this._fs.writeFileSync(outputPath, verifiedBuffer)
-  }
+    }
 
   async signFile(path: string, privateKey: string | Buffer | undefined = undefined, privateKeyPassphrase: string | undefined = undefined): Promise<string> {
     try {
@@ -367,8 +384,142 @@ export default class Polykey {
     return vault
   }
 
+  async tcpNode() {
+    // A simple upgrader that just returns the MultiaddrConnection
+    const upgrader = {
+      upgradeInbound: maConn => maConn,
+      upgradeOutbound: maConn => maConn
+    }
+
+    const tcp = new TCP({ upgrader })
+
+    const listener = tcp.createListener((socket) => {
+      console.log('new connection opened')
+
+      pipe(
+        ['hello'],
+        socket
+      )
+    })
+
+    // const addr = (await this.getNodeAddrs())[0]
+    const addr = '/ip4/127.0.0.1/tcp/9090'
+    
+    const ma = multiaddr(addr)
+    await listener.listen(ma)
+    console.log('listening')
+
+    const socket = await tcp.dial(ma)
+    
+    const values = pipe(
+      socket,
+      collect
+    )
+    console.log(`Value: ${await values}`)
+
+    // Close connection after reading
+    await listener.close()
+  }
+
+  async startNode(bootstrapMultiaddrs: string[] = []) {
+    // Create libp2p node
+    const node = await Libp2p.create({
+      modules: {
+        transport: [TCP],
+        connEncryption: [SECIO],
+        streamMuxer: [Mplex],
+        dht: KadDHT
+      },
+      config: {
+        dht: {
+          enabled: true
+        },
+        peerDiscovery: {
+          autoDial: true, // Auto connect to discovered peers (limited by ConnectionManager minPeers)
+          // The `tag` property will be searched when creating the instance of your Peer Discovery service.
+          // The associated object, will be passed to the service when it is instantiated.
+          [Bootstrap.tag]: {
+            enabled: true,
+            list: bootstrapMultiaddrs // provide array of multiaddrs
+          }
+        }
+      }
+    })
+    const listenAddress = multiaddr(`/ip4/127.0.0.1/tcp/0`)
+    node.peerInfo.multiaddrs.add(listenAddress)
+
+    // 
+    node.on('peer:discovery', (peer) => {
+      console.log('Discovered %s', peer.id.toB58String()) // Log discovered peer
+    })
+
+    node.on('peer:connect', (peer) => {
+        console.log('Connected to %s', peer.id.toB58String()) // Log connected peer
+    })
+
+    node.on('peer:disconnect', (peer) => {
+        console.log('Disconnected to %s', peer.id.toB58String()) // Log connected peer
+    })
+
+    // Start node
+    await node.start()
+    console.log('libp2p has started')
+
+    this._node = node
+
+    const stop = async () => {
+      // stop libp2p
+      await this._node.stop()
+      console.log('libp2p has stopped')
+      process.exit(0)
+    }
+    
+    process.on('SIGTERM', stop)
+    process.on('SIGINT', stop)
+  }
+
+  async stopNode() {
+    await this._node.stop()
+  }
+
+  async pingNode(addr: string) {
+    try {
+      await this._waitForNodeInit(5)
+      const ma = multiaddr(addr)
+      const latency = await this._node.ping(ma)
+      console.log(`pinged ${addr} in ${latency}ms`)
+    } catch (err) {
+      console.log('there was an error!');
+      throw(err)
+    }
+  }
+
+  private async _waitForNodeInit(seconds: number) {
+    if (this._node === undefined) { // Give the node some time to be initialized
+      const attempts = (seconds * 1000) / 100
+      for (let i=0; i<attempts; i++) {
+        if (this._node === undefined) {
+          await delay(100)
+        }
+      }
+      if (this._node === undefined) {
+        throw(Error('node was not initialized within 10s'))
+      }
+    }
+  }
+
+  async getNodeAddrs(): Promise<string[]> {
+    await this._waitForNodeInit(5)
+    
+    let nodeAddr: string[] = []
+
+    this._node.peerInfo.multiaddrs.forEach((ma) => {
+      nodeAddr.push(`${ma.toString()}/p2p/${this._node.peerInfo.id.toB58String()}`)
+    })
+    return nodeAddr
+  }
+
   _initSync(): void {
-    // Import keypair first
     // check if .polykey exists
     //  make folder if doesn't
     if (!this._fs.existsSync(this._polykeyPath)) {
@@ -411,61 +562,3 @@ export default class Polykey {
     return keyBuf
   }
 }
-
-
-// type FileOptions = { 
-// 	encoding?: BufferEncoding | undefined, 
-// 	mode?: number | undefined, 
-// 	flag?: string | undefined
-// }
-// type CharacterEncoding = 'ascii' | 'utf8' | 'utf-8' | 'utf16le' | 'ucs2' | 'ucs-2' | 'base64' | 'latin1' | 'binary' | 'hex' | undefined
-// export interface GeneralFileSystem {
-//   exists(path: string, callback: (exists: boolean) => void): void
-//   existsSync(path: string): boolean
-//   mkdir(path: string, options: {recursive: boolean} | undefined, callback: (err: NodeJS.ErrnoException | null, path: string) => void): void
-//   mkdirSync(path: string, options: {recursive: boolean} | undefined): void
-//   rmdirSync(path: string, options?: {recursive: boolean} | undefined): void
-//   readFileSync(path: string, options: {encoding?: string | undefined, flag?: string | undefined} | undefined): Buffer | string
-//   open(path: string, flags: string, mode: number, callback: (err: NodeJS.ErrnoException | null, fd: number | undefined) => void): void
-//   openSync(path: string, flags: string, mode?: number): number
-// 	mkdtemp(prefix: String, options: { encoding: BufferEncoding } | BufferEncoding | null | undefined, callback: (err: NodeJS.ErrnoException | null, path: string | Buffer) => void): void
-// 	mkdtempSync(prefix: String, options: { encoding: BufferEncoding } | BufferEncoding | null | undefined): string | Buffer
-// 	// access(path: PathLike, mode: number | undefined, callback: NoParamCallback): void
-// 	// accessSync(path: PathLike, mode?: number | undefined): void
-// 	// close(fd: number, callback: NoParamCallback): void
-// 	// closeSync(fd: number): void
-//   // rmdirSync(path: string, options: {recursive: boolean} | undefined): void
-//   writeFile(path: string | number, data: Buffer | string, options: FileOptions, callback: (err: NodeJS.ErrnoException | null) => void): Promise<void>
-//   writeFileSync(path: PathLike | number, data: string | Buffer, options?: FileOptions): void
-//   readdirSync(path: string, options: {encoding: CharacterEncoding, withFileTypes?: boolean} | undefined): string[]
-// 	write(fd: number, buffer: Buffer, offset: number, length: number, position: number, callback: (err: NodeJS.ErrnoException | null, written: number, buffer: Buffer) => void): void
-// 	writeSync(fd: number, buffer: Buffer, offset?: number, length?: number, position?: number): number
-// 	// open(path: PathLike, flags: string | number, mode: string | number | null | undefined, callback: (err: NodeJS.ErrnoException | null, fd: number) => void): void
-// 	// openSync(path: PathLike, flags: string | number, mode?: string | number | null | undefined): number
-// 	// exists(path: PathLike, callback: (exists: boolean) => void): void
-// 	// existsSync(path: PathLike): boolean
-// 	// read<TBuffer extends NodeJS.ArrayBufferView>(fd: number, buffer: TBuffer, offset: number, length: number, position: number | null, callback: (err: NodeJS.ErrnoException | null, bytesRead: number, buffer: TBuffer) => void): void
-// 	// readSync(fd: number, buffer: NodeJS.ArrayBufferView, offset: number, length: number, position: number | null): number
-// 	// appendFile(file: string | number | Buffer | URL, data: any, options: FileOptions, callback: NoParamCallback): void
-// 	// appendFileSync(file: string | number | Buffer | URL, data: any, options?: string | FileOptions | null | undefined): void
-// 	// unlink(path: PathLike, callback: NoParamCallback): void
-// 	// unlinkSync(path: PathLike): void
-// 	// open(path: PathLike, flags: string | number, mode: string | number | null | undefined, callback: (err: NodeJS.ErrnoException | null, fd: number) => void): void
-// 	// openSync(path: PathLike, flags: string | number, mode?: string | number | null | undefined): number
-// 	// readlink(path: PathLike, ...args: Array<any>): void
-// 	// readlinkSync(path: PathLike, options?: FileOptions): string | Buffer
-// 	// symlink(dstPath: PathLike, srcPath: PathLike, ...args: Array<any>): void
-// 	// symlinkSync(dstPath: PathLike, srcPath: PathLike, type: "dir" | "file" | "junction" | null | undefined): void
-// 	// link(existingPath: PathLike, newPath: PathLike, callback: NoParamCallback): void
-// 	// linkSync(existingPath: PathLike, newPath: PathLike): void
-// 	// fstat(fdIndex: number, callback: (err: NodeJS.ErrnoException | null, stat: Stat) => void): void
-// 	// fstatSync(fdIndex: number): Stat
-// 	// mkdtemp(prefix: String, options: { encoding: CharacterEncoding } | CharacterEncoding | null | undefined, callback: (err: NodeJS.ErrnoException | null, path: string | Buffer) => void): void
-// 	// mkdtempSync(prefix: String, options: { encoding: CharacterEncoding } | CharacterEncoding | null | undefined): string | Buffer
-// 	// chmod(path: PathLike, mode: number, callback: NoParamCallback): void
-// 	// chmodSync(path: PathLike, mode: number): void
-// 	// chown(path: PathLike, uid: number, gid: number, callback: NoParamCallback): void
-// 	// chownSync(path: PathLike, uid: number, gid: number): void
-// 	// utimes(path: PathLike, atime: number | string | Date, mtime: number | string | Date, callback: NoParamCallback): void
-// 	// utimesSync(path: PathLike, atime: number | string | Date, mtime: number | string | Date): void
-// }

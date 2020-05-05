@@ -103,12 +103,24 @@ const config = polykey.command('config')
 const keymanager = polykey.command('keymanager')
     .description('manipulate the keymanager')
 
+/*******************************************/
+// node
+const node = polykey.command('node')
+node.description('network operations on the current polykey node')
+
+/*******************************************/
+// node start
+const nodeStart = node.command('start')
+    .description('start listening')
+    .action(async (options) => {
+        console.log('something something something');
+        
+    })
 
 /*******************************************/
 // secrets
 const secrets = polykey.command('secrets')
     .description('manipulate vault secrets')
-
     
 /*******************************************/
 // secrets list
@@ -305,7 +317,7 @@ verify
         const signingKeyPath = options.signingKey
         const filePathList = options.args.values()
         for (const filePath of filePathList) {
-            try {
+        try {
                 let verifiedPath = filePath
                 // Remove .sig suffix if it exists
                 if (verifiedPath.split('.').pop() === 'sig') {
@@ -317,7 +329,7 @@ verify
                 verifiedPath = `${verifiedPath}.verified`
                 await pk.verifyFile(filePath, verifiedPath, signingKeyPath)
                 console.log(chalk.green(`file '${filePath}' successfully verified at '${verifiedPath}'`));
-            } catch (err) {
+        } catch (err) {
                 console.log(chalk.red(`failed to sign '${filePath}': ${err}`));
             }
         }
