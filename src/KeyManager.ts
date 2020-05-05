@@ -2,20 +2,15 @@
 import fs from 'fs-extra'
 import crypto from 'crypto'
 import chalk from 'chalk'
-import process from 'process'
 import Path from 'path'
 import { promisify } from 'util'
-import { rejects } from 'assert'
-import { resolve } from 'dns'
+import { KeyPair } from './util'
 
 // js imports
 const kbpgp = require('kbpgp')
 var F = kbpgp["const"].openpgp;
 const zxcvbn = require('zxcvbn')
-
-// TODO: flow type annotations
-// TODO: funciton docs
-
+const vfs = require('virtualfs')
 
 // TODO: remember that the symmetric keys will just be stored in vault directories.
 // I feel the symmetric key funciton here are not needed.
@@ -24,18 +19,14 @@ const zxcvbn = require('zxcvbn')
   // I think it should
 
 // Make a base class (or interaface) 'Key'. It has most of the methods you see here. The symetric and asymmetric keys
-// can both have their implementations of it. For example, they'd both have different generateKeyPj
-// Or maybe just return two different objects from within the class, one for symmetric and onle for asymmetric
+// can both have their implementations of it. For example, they'd both have different generateKeyPair
+// Or maybe just return two different objects from within the class, one for symmetric and one for asymmetric
 
 // We want a consistent and uniform library. So even if we change crypto libraries for symm or asymm, not much
 // changes for compositional code. KeyManager, returns a 'Key' instance. There can be difference classes for both
 // symm and asymm. Cryptor can then take these Key classes, which expose the crytpo functions. So even if the
 // crypto library changes, Cryptor doesn't have to cahnge and neither does polykey.
 
-type KeyPair = {
-  private: string,
-  public: string
-}
 
 export default class KeyManager {
   // TODO: wouldn't keymanager have many sym keys keys to look after?
@@ -45,10 +36,13 @@ export default class KeyManager {
   _salt!: Buffer
   _passphrase!: string
   _storePath: string
+  _fs: typeof fs
   constructor(
     polyKeyPath: string = '~/.polykey/'
   ) {
     this._storePath = polyKeyPath
+    // Import keypair if it exists
+    // Create a vault for key storage
   }
 
   // return {private: string, public: string}
@@ -118,7 +112,7 @@ export default class KeyManager {
     return this._keyPair.private
   }
 
-  async loadIdentity(passphrase: string): Promise<void> {
+  async importIdentity(passphrase: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       kbpgp.KeyManager.import_from_armored_pgp({amored: this.getPublicKey()}, (err, identity) => {
         if (!err) {
@@ -175,13 +169,13 @@ export default class KeyManager {
     }
   }
 
-  async storePrivateKey(path: string): Promise<void> {
-    await fs.writeFile(path, this._keyPair.private)
-  }
+  // async exportPrivateKey(path: string): Promise<void> {
+  //   await fs.writeFile(path, this._keyPair.private)
+  // }
 
-  async storePublicKey(path: string): Promise<void> {
-    await fs.writeFile(path, this._keyPair.public)
-  }
+  // async exportPublicKey(path: string): Promise<void> {
+  //   await fs.writeFile(path, this._keyPair.public)
+  // }
 
   // symmetric key generation
   generateKeySync(passphrase: string, salt: Buffer = crypto.randomBytes(32)): Buffer {
@@ -200,11 +194,11 @@ export default class KeyManager {
     return this._key
   }
 
-  loadKeySync(keyPath: string): void {
+  importKeySync(keyPath: string): void {
     this._key = fs.readFileSync(keyPath)
   }
 
-  async loadKey(keyPath: string): Promise<void> {
+  async importKey(keyPath: string): Promise<void> {
     try {
       this._key = await fs.readFile(keyPath)
     } catch(err) {
@@ -212,11 +206,11 @@ export default class KeyManager {
     }
   }
 
-  loadKeyBuffer(key: Buffer): void {
+  importKeyBuffer(key: Buffer): void {
     this._key = key
   }
 
-  async storeKey(path: string, createPath?: boolean): Promise<void> {
+  async exportKey(path: string, createPath?: boolean): Promise<void> {
     if (!this._key) {
       throw Error('There is no key loaded')
     }
@@ -231,7 +225,7 @@ export default class KeyManager {
     }
   }
 
-  storeKeySync(path: string, createPath?: boolean): void {
+  exportKeySync(path: string, createPath?: boolean): void {
     if (!this._key) {
       throw Error('There is no key loaded')
     }
@@ -246,7 +240,7 @@ export default class KeyManager {
     }
   }
 
-  async storeProfile(name: string, storeKey: boolean = false): Promise<void> {
+  async exportProfile(name: string, exportKey: boolean = false): Promise<void> {
     const profilePath = Path.join(this._storePath, name)
     if (!this._key && !this._salt) {
       throw Error('There is nothing loaded to store')
@@ -258,7 +252,7 @@ export default class KeyManager {
       } else {
         await fs.mkdirs(profilePath)
       }
-      if (storeKey && this._key) {
+      if (exportKey && this._key) {
         await fs.writeFile(Path.join(profilePath, 'key'), this._key)
       }
       if (this._salt) {
@@ -269,7 +263,7 @@ export default class KeyManager {
     }
   }
 
-  async storeProfileSync(name: string, storeKey: boolean = false): Promise<void> {
+  async exportProfileSync(name: string, storeKey: boolean = false): Promise<void> {
     const profilePath = Path.join(this._storePath, name)
     if (!this._key && !this._salt) {
       throw Error('There is nothing loaded to warrant storage')
@@ -292,7 +286,7 @@ export default class KeyManager {
     }
   }
 
-  async loadProfile(name: string, passphrase?: string): Promise<void> {
+  async importProfile(name: string, passphrase?: string): Promise<void> {
     const profilePath = Path.join(this._storePath, name)
     try {
       if (passphrase) {
