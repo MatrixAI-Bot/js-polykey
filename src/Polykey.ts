@@ -4,7 +4,6 @@ import os from 'os'
 import Vault from './Vault'
 import crypto, { sign } from 'crypto'
 import jsonfile from 'jsonfile'
-import _ from 'lodash'
 import KeyManager from './KeyManager'
 import EncryptedFS from '../encryptedfs-tmp/EncryptedFS'
 import { KeyPair } from './util'
@@ -246,7 +245,7 @@ export default class Polykey {
   * and the metadata for the vault containg the key
   */
   async _validateVault (vaultName: string): Promise<void> {
-    const existsMeta = _.has(this._metadata.vaults, vaultName)
+    const existsMeta = this._metadata.vaults.hasOwnProperty(vaultName)
     if (!existsMeta) {
       throw Error('Vault metadata does not exist')
     }
