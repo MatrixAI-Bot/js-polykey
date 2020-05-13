@@ -46,13 +46,13 @@ export class Git extends EventEmitter {
      }
    * @param  {Boolean=}  options.checkout - If `opts.checkout` is true, create and expected checked-out repos instead of bare repos
   */
-  constructor(repoDir, options: any={}) {
+  constructor(repoDir: (string | Function), options: any={}) {
     super();
 
     if(typeof repoDir === 'function') {
         this.dirMap = repoDir;
     } else {
-        this.dirMap = (dir) => {
+        this.dirMap = (dir: any) => {
             return (path.normalize(dir ? path.join(repoDir, dir) : repoDir));
         };
     }
@@ -68,9 +68,9 @@ export class Git extends EventEmitter {
    * @memberof Git
    * @param  {Function} callback function to be called when repositories have been found `function(error, repos)`
    */
-  list(callback) {
+  list(callback: (err: any, repos: any) => void) {
       this.fs.readdir(this.dirMap(), (error, results) => {
-        if(error) return callback(error);
+        if(error) return callback(error, null);
         let repos = results.filter((r) => {
           return r.substring(r.length - 3, r.length) == 'git';
         }, []);
@@ -85,7 +85,7 @@ export class Git extends EventEmitter {
    * @param  {String}   repo - name of the repo
    * @param  {Function=} callback - function to be called when finished
    */
-  exists(repo, callback) {
+  exists(repo: string, callback: (ex: any) => void) {
     this.fs.exists(this.dirMap(repo), callback);
   }
   /**
@@ -95,7 +95,7 @@ export class Git extends EventEmitter {
    * @param  {String}   dir - directory name
    * @param  {Function=} callback  - callback to be called when finished
    */
-  mkdir(dir, callback) {
+  mkdir(dir: string, callback: any) {
       // TODO: remove sync operations
       const parts = this.dirMap(dir).split(path.sep);
       for(var i = 0; i <= parts.length; i++) {
@@ -113,7 +113,7 @@ export class Git extends EventEmitter {
    * @param  {String}   repo - the name of the repo
    * @param  {Function=} callback - Optionally get a callback `cb(err)` to be notified when the repository was created.
    */
-  create(repo, callback) {
+  create(repo: string, callback: any) {
       var self = this;
       if (typeof callback !== 'function') callback = function () {};
 
@@ -127,7 +127,7 @@ export class Git extends EventEmitter {
           }
       });
 
-      function next (err) {
+      function next (err: string | boolean | null) {
           if (err) return callback(err);
 
           var ps, error = '';
@@ -154,7 +154,7 @@ export class Git extends EventEmitter {
    * @param  {String} service - the service type
    * @return {String}  - will respond with either upload or download
    */
-  getType(service) {
+  getType(service: any): string {
     switch(service) {
       case 'upload-pack':
         return 'fetch';
@@ -171,7 +171,9 @@ export class Git extends EventEmitter {
    * @param  {Object} req - http request object
    * @param  {Object} res - http response object
    */
-  handle(req, res) {
+  handle(req: any, res: any) {
+    console.log('jhaha');
+
       const handlers = [
         function(req, res) {
             if (req.method !== 'GET') return false;
@@ -349,7 +351,7 @@ export class Git extends EventEmitter {
    * @param  {Function} callback - the function to call when server is started or error has occured
    * @return {Git}  - the Git instance, useful for chaining
    */
-  listen(port, options, callback) {
+  listen(port: number, options: any, callback: any): Git {
       const self = this;
       if(typeof options == 'function' || !options) {
         callback = options;
