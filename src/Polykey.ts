@@ -5,8 +5,7 @@ import Vault from './Vault'
 import crypto, { sign } from 'crypto'
 import jsonfile from 'jsonfile'
 import KeyManager from './KeyManager'
-import EncryptedFS from '../encryptedfs-tmp/EncryptedFS'
-import { KeyPair } from './util'
+import { Buffer } from 'buffer/'
 
 // js imports
 const Libp2p = require('libp2p')
@@ -179,7 +178,7 @@ export default class Polykey {
       let vaultKey: Buffer
       if (key === undefined) {
         // Generate new key
-        vaultKey = crypto.randomBytes(vaultKeySize)
+        vaultKey = Buffer.from(crypto.randomBytes(vaultKeySize))
       } else {
         // Assign key if it is provided
         vaultKey = key
@@ -279,7 +278,7 @@ export default class Polykey {
       if (publicKey !== undefined) {
         if (typeof publicKey === 'string') {  // Path
           // Read in from fs
-          keyBuffer = this._fs.readFileSync(publicKey)
+          keyBuffer = Buffer.from(this.fs.readFileSync(publicKey))
         } else {  // Buffer
           keyBuffer = publicKey
         }
@@ -308,7 +307,7 @@ export default class Polykey {
       if (privateKey !== undefined) {
         if (typeof privateKey === 'string') {  // Path
           // Read in from fs
-          keyBuffer = this._fs.readFileSync(privateKey)
+          keyBuffer = Buffer.from(this.fs.readFileSync(privateKey))
         } else {  // Buffer
           keyBuffer = privateKey
         }
@@ -326,7 +325,7 @@ export default class Polykey {
         }
       }
       // Read file into buffer
-      const buffer = this._fs.readFileSync(path, undefined)
+      const buffer = Buffer.from(this.fs.readFileSync(path, undefined))
       // Sign the buffer
       const signedBuffer = await this._km.signData(buffer, keyBuffer, privateKeyPassphrase)
       // Write buffer to signed file

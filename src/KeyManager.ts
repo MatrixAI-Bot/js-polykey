@@ -5,6 +5,7 @@ import chalk from 'chalk'
 import Path from 'path'
 import { promisify } from 'util'
 import { KeyPair } from './util'
+import { Buffer } from 'buffer/'
 
 // js imports
 const kbpgp = require('kbpgp')
@@ -127,7 +128,7 @@ export default class KeyManager {
     try {
       let keyBuffer: Buffer
       if (typeof privateKey === 'string') {
-        keyBuffer = (await fs.readFile(privateKey))
+        keyBuffer = Buffer.from(await fs.readFile(privateKey))
       } else {
         keyBuffer = privateKey
       }
@@ -145,7 +146,7 @@ export default class KeyManager {
     try {
       let keyBuffer: Buffer
       if (typeof publicKey === 'string') {
-        keyBuffer = (await fs.readFile(publicKey))
+        keyBuffer = Buffer.from(await fs.readFile(publicKey))
       } else {
         keyBuffer = publicKey
       }
@@ -211,29 +212,29 @@ export default class KeyManager {
   // }
 
   // symmetric key generation
-  generateKeySync(passphrase: string, salt: Buffer = crypto.randomBytes(32)): Buffer {
+  generateKeySync(passphrase: string, salt: Buffer = Buffer.from(crypto.randomBytes(32))): Buffer {
     const [algo, keyLen, numIterations] = ['sha256', 256/8, 10000]
-    this._key = crypto.pbkdf2Sync(passphrase , salt, numIterations, keyLen, algo)
+    this._key = Buffer.from(crypto.pbkdf2Sync(passphrase , salt, numIterations, keyLen, algo))
     this._salt = salt
 
     return this._key
   }
 
-  async generateKey(passphrase: string, salt: Buffer = crypto.randomBytes(32)): Promise<Buffer> {
+  async generateKey(passphrase: string, salt: Buffer = Buffer.from(crypto.randomBytes(32))): Promise<Buffer> {
     const [algo, keyLen, numIterations] = ['sha256', 256/8, 10000]
-    this._key = await promisify(crypto.pbkdf2)(passphrase , salt, numIterations, keyLen, algo)
+    this._key = Buffer.from(await promisify(crypto.pbkdf2)(passphrase , salt, numIterations, keyLen, algo))
     this._salt = salt
 
     return this._key
   }
 
   importKeySync(keyPath: string): void {
-    this._key = fs.readFileSync(keyPath)
+    this._key = Buffer.from(fs.readFileSync(keyPath))
   }
 
   async importKey(keyPath: string): Promise<void> {
     try {
-      this._key = await fs.readFile(keyPath)
+      this._key = Buffer.from(await fs.readFile(keyPath))
     } catch(err) {
       throw Error('Reading key from disk')
     }
@@ -323,7 +324,7 @@ export default class KeyManager {
     const profilePath = Path.join(this._storePath, name)
     try {
       if (passphrase) {
-        this._salt = await fs.readFile(Path.join(profilePath, 'salt'))
+        this._salt = Buffer.from(await fs.readFile(Path.join(profilePath, 'salt')))
         // TODO: use async version
         this.generateKeySync(passphrase, this._salt)
         return
@@ -332,7 +333,7 @@ export default class KeyManager {
       throw Error('Loading profile salt from disk')
     }
     try {
-      this._key = await fs.readFile(Path.join(profilePath, 'key'))
+      this._key = Buffer.from(await fs.readFile(Path.join(profilePath, 'key')))
     } catch (err) {
       throw Error('Loading profile key from disk')
     }
@@ -393,7 +394,7 @@ export default class KeyManager {
         if (err) {
           reject(err)
         }
-        resolve(Buffer.from(result_buffer))
+        resolve(Buffer.from(result_string))
       })
     })
   }

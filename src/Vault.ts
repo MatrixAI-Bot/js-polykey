@@ -2,7 +2,8 @@
 import hkdf from 'futoin-hkdf'
 // $FlowFixMe
 import Path from 'path'
-import EncryptedFS from '../encryptedfs-tmp/EncryptedFS'
+import { EncryptedFS } from 'js-encryptedfs'
+import { Buffer } from 'buffer/'
 import fs from 'fs'
 import * as git from 'isomorphic-git'
 
@@ -56,7 +57,7 @@ export default class Vault {
   }
 
   _genSymKey(asymKey: Buffer, keyLen: number): Buffer {
-    return hkdf(asymKey, keyLen)
+    return Buffer.from(hkdf(asymKey.toString(), keyLen))
   }
 
   _secretExists(secretName: string) : boolean {
@@ -82,7 +83,7 @@ export default class Vault {
       } else {
         const secretPath = Path.join(this._vaultPath, secretName)
         // TODO: this should be async
-        const secretBuf = this._fs.readFileSync(secretPath, undefined)
+        const secretBuf = this._fs.readFileSync(secretPath, {})
         this._secrets.set(secretName, secretBuf)
         return secretBuf
       }

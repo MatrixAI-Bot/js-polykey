@@ -1,4 +1,5 @@
 import Polykey from '../src/Polykey'
+import { Buffer } from 'buffer/'
 import fs from 'fs-extra'
 import chalk from 'chalk'
 import os from 'os'
