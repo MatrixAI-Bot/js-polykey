@@ -1,10 +1,8 @@
 // ts imports
 import fs from 'fs'
 import os from 'os'
-import process from 'process'
-import EncryptedFS from '../encryptedfs-tmp/EncryptedFS'
 import Polykey from '../src/Polykey'
-import Library from '../src/Polykey'
+import { Buffer } from 'buffer/'
 
 // js imports
 const kbpgp = require('kbpgp')
@@ -23,14 +21,14 @@ describe('PolyKey class', () => {
 		// Define temp directory
 		tempDir = fs.mkdtempSync(`${os.tmpdir}/pktest${randomString()}`)
 		console.log(tempDir);
-		
+
 		// Create keyManager
 		const km = new Polykey.KeyManager()
 		km.loadKeyPair('./playground/keys/private.key', './playground/keys/public.key')
 		// Initialize polykey
 		pk = new Polykey(
-			km,
 			Buffer.from('some passphrase'),
+			km,
 			32,
 			tempDir
 		)
@@ -51,7 +49,7 @@ describe('PolyKey class', () => {
 			// Reset the vault name for each test
 			vaultName = `Vault-${randomString()}`
 		})
-		
+
 		test('can create vaults', async () => {
 			// Create vault
 			await pk.createVault(vaultName)
@@ -82,13 +80,13 @@ describe('PolyKey class', () => {
 			test('can create secrets and read them back', async () => {
 				// Create vault
 				await pk.createVault(vaultName)
-				
+
 				// Run test
 				const initialSecretName = 'ASecret'
 				const initialSecret = 'super confidential information'
 				// Add secret
 				await pk.addSecret(vaultName, initialSecretName, Buffer.from(initialSecret))
-				
+
 				// Read secret
 				const readBuffer = await pk.getSecret(vaultName, initialSecretName)
 				const readSecret = readBuffer.toString()
@@ -100,7 +98,7 @@ describe('PolyKey class', () => {
 
 	test('can create keypairs', done => {
 		// Create private keys (async)
-		pk._km.generateKeyPair('John Smith', 'john.smith@gmail.com', 'passphrase').then((keypair) => {
+		pk.km.generateKeyPair('John Smith', 'john.smith@gmail.com', 'passphrase').then((keypair) => {
 			fs.mkdirSync(`${tempDir}/keys/`, {recursive: true})
 			fs.writeFileSync(`${tempDir}/keys/private.key`, keypair.private)
 			fs.writeFileSync(`${tempDir}/keys/public.key`, keypair.public)
@@ -118,7 +116,7 @@ describe('PolyKey class', () => {
 			// Reset the vault name for each test
 			vaultName = `Vault-${randomString()}`
 			// Create private keys (async)
-			pk._km.generateKeyPair('John Smith', 'john.smith@gmail.com', 'passphrase').then((keypair) => {
+			pk.km.generateKeyPair('John Smith', 'john.smith@gmail.com', 'passphrase').then((keypair) => {
 				expect(keypair).not.toBeNull()
 				done()
 			})
@@ -126,17 +124,17 @@ describe('PolyKey class', () => {
 
 		test('can sign and verify strings', async done => {
 			const originalData = Buffer.from('I am to be signed')
-			const signedData = await pk._km.signData(originalData)
-			const verifiedData = await pk._km.verifyData(signedData)
+			const signedData = await pk.km.signData(originalData)
+			const verifiedData = await pk.km.verifyData(signedData, undefined)
 			expect(originalData).toEqual(verifiedData)
 			done()
-			
+
 		}, 200000)
 
 		test('can sign and verify files', async done => {
 			const originalData = Buffer.from('I am to be signed')
 			const filePath = `${tempDir}/file`
-			pk._fs.writeFileSync(filePath, originalData)
+			fs.writeFileSync(filePath, originalData)
 			// Sign file
 			const signedPath = `${tempDir}/file.signed`
 			await pk.signFile(filePath, signedPath)
@@ -144,13 +142,13 @@ describe('PolyKey class', () => {
 			const verifiedPath = `${tempDir}/file.signed`
 			await pk.verifyFile(signedPath, verifiedPath)
 			// Confirm equality
-			const verifiedBuffer = pk._fs.readFileSync(verifiedPath, undefined)
+			const verifiedBuffer = fs.readFileSync(verifiedPath, undefined)
 			expect(verifiedBuffer).toEqual(originalData)
 			done()
-			
+
 		}, 200000)
 	})
-	
+
 
 	////////////////
 	// KeyManager //
