@@ -5,7 +5,6 @@ import chalk from 'chalk'
 import Path from 'path'
 import { promisify } from 'util'
 import { KeyPair } from './util'
-import { Buffer } from 'buffer/'
 
 // js imports
 const kbpgp = require('kbpgp')
@@ -58,7 +57,7 @@ export default class KeyManager {
     } else {
       console.log(chalk.green(`passphrase score for new keypair is 4 or above.`))
     }
-    
+
 
     // Define options
     var options = {
@@ -101,7 +100,7 @@ export default class KeyManager {
               // Set the new identity
               this._identity = identity
               console.log(identity);
-              
+
               resolve(keypair)
               // TODO: revocation signature?
               // var revocationSignature = key.revocationSignature // '-----BEGIN PGP PUBLIC KEY BLOCK ... '
@@ -133,7 +132,7 @@ export default class KeyManager {
         keyBuffer = privateKey
       }
       this._keyPair.private = keyBuffer.toString()
-  
+
       if (passphrase) {
         this._passphrase = passphrase
       }
@@ -160,7 +159,7 @@ export default class KeyManager {
     return new Promise<void>((resolve, reject) => {
       const pubKey: string = this.getPublicKey()
       const privKey: string = this.getPrivateKey()
-      
+
       kbpgp.KeyManager.import_from_armored_pgp({armored: pubKey}, (err, identity) => {
         if (err) {
           reject(err)
@@ -400,8 +399,8 @@ export default class KeyManager {
   }
 
   // Verify data
-  verifyData(data: Buffer | string, withKey: Buffer | undefined = undefined): Promise<Buffer> {
-    return new Promise<Buffer>(async (resolve, reject) => {
+  verifyData(data: Buffer | string, signature: Buffer, withKey: Buffer | undefined = undefined): Promise<string> {
+    return new Promise<string>(async (resolve, reject) => {
       var ring = new kbpgp.keyring.KeyRing;
       let resolvedIdentity: Object
       if (withKey !== undefined) {
@@ -411,17 +410,27 @@ export default class KeyManager {
       } else {
         throw(Error('no identity available for signing'))
       }
-      
+
       ring.add_key_manager(this._identity)
       const params = {
-          raw: kbpgp.Buffer.from(data),
-          keyfetch: ring
+        armored: signature,
+        data: data,
+        keyfetch: ring
       }
       kbpgp.unbox(params, (err, literals) => {
         if (err) {
           reject(err)
         }
-        resolve(literals[0].data)
+        let ds = literals[0].get_data_signer()
+        let km: any
+        if (ds) {
+          km = ds.get_key_manager()
+        }
+        if (km) {
+          resolve(km.get_pgp_fingerprint().toString('hex'));
+        } else {
+          reject(Error('could not verify file'))
+        }
       })
     })
   }

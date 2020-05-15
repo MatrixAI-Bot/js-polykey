@@ -2,7 +2,6 @@
 import fs from 'fs'
 import os from 'os'
 import Polykey from '../src/Polykey'
-import { Buffer } from 'buffer/'
 
 // js imports
 const kbpgp = require('kbpgp')
@@ -125,7 +124,7 @@ describe('PolyKey class', () => {
 		test('can sign and verify strings', async done => {
 			const originalData = Buffer.from('I am to be signed')
 			const signedData = await pk.km.signData(originalData)
-			const verifiedData = await pk.km.verifyData(signedData, undefined)
+			const verifiedData = await pk.km.verifyData(originalData, signedData)
 			expect(originalData).toEqual(verifiedData)
 			done()
 

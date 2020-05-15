@@ -102,7 +102,7 @@ export default class Vault {
     throw Error('Secret: ' + secretName + ' does not exist')
   }
 
-  listSecrets (): string[] {
+  listSecrets(): string[] {
     let secrets: string[] = Array.from(this._secrets.keys())
     return secrets
   }

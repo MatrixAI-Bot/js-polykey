@@ -285,12 +285,17 @@ vaultDestroy
     })
 
 
+
+/*******************************************/
+// crypto
+const crypto = polykey.command('crypto')
+    .description('crypto operations')
+
 /*******************************************/
 // sign
-const sign = polykey.command('sign')
-sign
+const sign = crypto.command('sign')
     .description('signing operations')
-    .option('-k, --signing-key <signingKey>', 'path to key that will be used to sign files')
+    .option('-k, --signing-key <signingKey>', 'path to private key that will be used to sign files')
     .option('-p, --key-passphrase <keyPassphrase>', 'passphrase to unlock the provided signing key')
     .arguments('file(s) to be signed')
     .action(async (options) => {
@@ -306,32 +311,32 @@ sign
             }
         }
     })
+
 /*******************************************/
 // verify
-const verify = polykey.command('verify')
-verify
+const verify = crypto.command('verify')
     .description('verification operations')
-    .option('-k, --verifying-key <verifyingKey>', 'path to key that will be used to verify files')
-    .arguments('file(s) to be verified')
+    .option('-k, --verifying-key <verifyingKey>', 'path to public key that will be used to verify files')
+    .option('-s, --detach-sig <detachedSignature>', 'path to detached signature for file')
+    .arguments('file to be verified')
     .action(async (options) => {
         const signingKeyPath = options.signingKey
-        const filePathList = options.args.values()
-        for (const filePath of filePathList) {
+        const detachedSignaturePath = options.detachSig
+        const filePathList: string[] = Array.from(options.args.values())
+        if (filePathList.length < 1) {
+            console.log(chalk.red('no file provided'))
+            return
+        }
+        const filePath = filePathList[0]
+        if (detachedSignaturePath === undefined) {
+            console.log(chalk.red('no signature provided'))
+            return
+        }
         try {
-                let verifiedPath = filePath
-                // Remove .sig suffix if it exists
-                if (verifiedPath.split('.').pop() === 'sig') {
-                    const temp = verifiedPath.split('.')
-                    temp.pop()
-                    verifiedPath = temp.join('.')
-                }
-                // Add .verified suffix
-                verifiedPath = `${verifiedPath}.verified`
-                await pk.verifyFile(filePath, verifiedPath, signingKeyPath)
-                console.log(chalk.green(`file '${filePath}' successfully verified at '${verifiedPath}'`));
+            const pgpFingerprint = await pk.verifyFile(filePath, detachedSignaturePath, signingKeyPath)
+            console.log(chalk.green(`file '${filePath}' successfully verified. PGP fingerprint: ${pgpFingerprint}`));
         } catch (err) {
-                console.log(chalk.red(`failed to sign '${filePath}': ${err}`));
-            }
+            console.log(chalk.red(`failed to sign '${filePath}': ${err.message}`))
         }
     })
 
