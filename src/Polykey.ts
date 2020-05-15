@@ -70,7 +70,7 @@ export default class Polykey {
     }
     // sync with polykey directory
     this._initSync()
-    
+
   }
 
   static get KeyManager() {
@@ -78,7 +78,7 @@ export default class Polykey {
   }
   async _fileExists(path: string): Promise<boolean> {
     return this.fs.existsSync(path)
-    }
+  }
   _fileExistsSync(path: string): boolean {
     return this.fs.existsSync(path)
   }
@@ -325,6 +325,31 @@ export default class Polykey {
     }
   }
 
+  // P2P operations
+  async beginPolyKeyDaemon() {
+    // const repos = new Git(this.polykeyPath, this.fs, {
+    //   fs: this.fs,
+    //   autoCreate: false
+    // });
+    // const port = 7005;
+
+    // repos.on('push', (push) => {
+    //     console.log(`push ${push.repo}/${push.commit} (${push.branch})`);
+    //     push.accept();
+    // });
+
+    // repos.on('fetch', (fetch) => {
+    //   console.log(`fetch ${fetch.commit}`);
+    //   fetch.accept();
+    // });
+
+    // repos.listen(port, null, () => {
+    //     console.log(`node-git-server running at http://localhost:${port}`)
+    // })
+
+    // return `ip4/127.0.0.1/tcp/${port}`
+  }
+
   tagVault() {
 
   }
@@ -333,12 +358,34 @@ export default class Polykey {
 
   }
 
-  shareVault() {
-
+  shareVault(vaultName: string): string {
+    // Get vault
+    const vault = this.vaults.get(vaultName)
+    if (vault) {
+      return vault.shareVault()
+    } else {
+      throw(Error('Vault does not exist'))
+    }
   }
 
   unshareVault() {
 
+  }
+
+  async pullVault(addr: string, vaultName: string) {
+    // Create vault first if it doesn't exist
+    let vault: Vault
+    if (!(await this.vaultExists(vaultName))) {
+      vault = await this.createVault(vaultName)
+    } else {
+      vault = await this._getVault(vaultName)
+    }
+
+    // Add new peer
+    vault.addPeer(addr)
+
+    // Make vault pull from peer vault
+    await vault.pullVault()
   }
 
 
@@ -371,12 +418,14 @@ export default class Polykey {
   }
 
   async getNodeAddrs(): Promise<string[]> {
-    await this._waitForNodeInit(5)
-    
-    let nodeAddr: string[] = []
+    // await this._waitForNodeInit(5)
 
-    this._node.peerInfo.multiaddrs.forEach((ma) => {
-      nodeAddr.push(`${ma.toString()}/p2p/${this._node.peerInfo.id.toB58String()}`)
+    let nodeAddr: string[] = []
+    // console.log('where is the repo?');
+    // console.log(await this._node.repo.stat())
+    const addr = await this._node.id()
+    addr.addresses.forEach((ma) => {
+      nodeAddr.push(`${ma.toString()}`)
     })
     return nodeAddr
   }
@@ -397,7 +446,7 @@ export default class Polykey {
     } else if (this.fs.existsSync(this.metadataPath)) {
       this.metadata = jsonfile.readFileSync(this.metadataPath)
     }
-    
+
     // Load all of the vaults into memory
     for (const vaultName in this.metadata.vaults) {
       if (this.metadata.vaults.hasOwnProperty(vaultName)) {
