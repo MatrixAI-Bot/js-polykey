@@ -28,6 +28,9 @@ module.exports = {
     contentBase: path.resolve(__dirname, 'dist'),
     publicPath: '/'
   },
+  node: {
+    buffer: true
+  },
   resolve: {
     extensions: ['.tsx', '.ts', '.js'],
     plugins: [new TsconfigPathsPlugin()]
@@ -46,11 +49,7 @@ module.exports = {
   plugins: [
     new ThreadsPlugin({
       globalObject: false
-    }),
-    new webpack.EnvironmentPlugin([
-      'HOST',
-      'PORT'
-    ])
+    })
   ],
   watchOptions: {
     ignored: /node_modules/
