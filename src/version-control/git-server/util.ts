@@ -6,6 +6,7 @@ import { spawn } from 'child_process'
 import { HttpDuplex } from './http-duplex'
 import { Service } from './service'
 import { Git } from './git'
+import fs from 'fs'
 
 export const Util = {
   /**
@@ -92,6 +93,19 @@ export const Util = {
       cmd = ['git-' + service, '--stateless-rpc', '--advertise-refs', repoLocation]
     }
 
+    // uploadPack({
+    //   fs: fs,
+    //   dir: repoLocation,
+    //   advertiseRefs: true
+    // }).then((buffer) => {
+    //   console.log('Im here!')
+    //   console.log(buffer?.toString())
+    // }).catch((e) => {
+    //   console.log(e);
+    // })
+
+
+
     const ps = spawn(cmd[0], cmd.slice(1))
     ps.on('error', (err) => {
       dup.emit('error', new Error(`${err.message} running command ${cmd.join(' ')}`))
@@ -130,6 +144,7 @@ export const Util = {
         'application/x-git-' + service + '-advertisement'
       )
       Util.noCache(res)
+      console.log('res3')
       Util.serviceRespond(
         git,
         service,
@@ -156,6 +171,7 @@ export const Util = {
         res.setHeader('content-type', 'text/plain')
         res.end('repository not found')
       } else {
+        console.log('res2')
         dup.once('accept', next)
         git.emit('info', dup)
 

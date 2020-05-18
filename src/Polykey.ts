@@ -5,7 +5,7 @@ import Vault from './Vault'
 import crypto from 'crypto'
 import jsonfile from 'jsonfile'
 import KeyManager from './KeyManager'
-import { Git } from './git-server/git'
+import { Git } from './version-control/git-server/git'
 
 type Metadata = {
   vaults: {

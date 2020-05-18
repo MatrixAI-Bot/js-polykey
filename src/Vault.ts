@@ -3,7 +3,7 @@ import hkdf from 'futoin-hkdf'
 // $FlowFixMe
 import Path from 'path'
 import { EncryptedFS } from 'js-encryptedfs'
-import { Git } from './git-server/git'
+import { Git } from './version-control/git-server/git'
 import fs from 'fs'
 import * as git from 'isomorphic-git'
 import http from 'isomorphic-git/http/web'
@@ -229,11 +229,11 @@ export default class Vault {
   }
 
   shareVault(): string {
-    const vaultParentDir = Path.dirname(this._vaultPath)
+    // const vaultParentDir = Path.dirname(this._vaultPath)
 
     git.init({fs: efsCallbackWrapper(this._fs), dir: Path.join(this._vaultPath, 'gitrepo')})
 
-    const repos = new Git(vaultParentDir, this._fs, {
+    const repos = new Git(this._vaultPath, this._fs, {
       autoCreate: false
     });
     const port = 7005;
