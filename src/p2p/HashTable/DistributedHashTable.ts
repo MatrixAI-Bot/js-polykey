@@ -1,15 +1,17 @@
 import multihashing from 'multihashing-async'
 import PeerId from 'peer-id'
-import { KBucket, PeerContact } from './kBucket'
+import { KBucket, PeerContact } from './KBucket'
+import { EventEmitter } from 'events'
 
 async function peerIdToHash(peerInfo: PeerId): Promise<Buffer> {
   return await multihashing.digest(peerInfo.id, 'sha2-256')
 }
 
-export class DistributedHashTable {
+export class DistributedHashTable extends EventEmitter {
   private kBucket: KBucket
 
   constructor(peerId: PeerId) {
+    super()
     peerIdToHash(peerId).then((localNodeId: Buffer) => {
       this.kBucket = new KBucket({ localNodeId: localNodeId })
 

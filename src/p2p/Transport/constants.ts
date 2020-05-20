@@ -1,0 +1,4 @@
+const CODE_CIRCUIT = 290
+const CODE_P2P = 421
+
+export { CODE_CIRCUIT, CODE_P2P }

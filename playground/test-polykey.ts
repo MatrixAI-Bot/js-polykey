@@ -1,16 +1,46 @@
 import Polykey from '../src/Polykey'
 import fs from 'fs'
+import {pipeWith} from 'pipe-ts'
 import chalk from 'chalk'
 import os from 'os'
 import * as git from 'isomorphic-git'
+
+const pipe = require('it-pipe')
+const { collect } = require('streaming-iterables')
+
 const vfs = require('virtualfs')
 
 import hkdf from 'futoin-hkdf'
 import { EncryptedFS } from 'js-encryptedfs'
 import Multiaddr from 'multiaddr'
+import {TCP} from '../src/p2p/Transport/TCP'
+import { MultiaddrConnection } from '../src/p2p/Transport/SocketToConnection'
 
 const main = async function() {
+  const tcp1 = new TCP()
 
+  const listener = tcp1.createListener({}, (socket: MultiaddrConnection) => {
+    console.log('new connection opened')
+    pipe(
+      ['hello'],
+      socket
+    )
+  })
+
+  const addr = new Multiaddr('/ip4/127.0.0.1/tcp/9090')
+  await listener.listen(addr)
+  console.log("listening");
+
+  const socket = await tcp1.dial(addr, {})
+  const values = await pipe(
+    socket,
+    collect
+  )
+  console.log(`Value: ${values.toString()}`)
+
+  // Close connection after reading
+  await listener.close()
+  return
   // const vaultName = 'VaultYouPutInHere?'
   const km1 = new Polykey.KeyManager()
   // const key = await km.generateKeyPair('John Smith', 'john.smith@gmail.com', 'passphrase')

@@ -51,7 +51,7 @@ export type PeerContact = {
  *
  * @extends EventEmitter
  */
-export class KBucket extends EventEmitter {
+class KBucket extends EventEmitter {
   localNodeId: Buffer
   numberOfNodesPerKBucket: number
   numberOfNodesToPing: number
@@ -469,3 +469,5 @@ export class KBucket extends EventEmitter {
   }
 }
 
+
+export default KBucket
