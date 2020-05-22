@@ -3,7 +3,8 @@ import PeerId from 'peer-id'
 import KBucket, { PeerContact } from './KBucket'
 import { EventEmitter } from 'events'
 
-async function peerIdToHash(peerInfo: PeerId): Promise<Buffer> {
+async function peerIdToHash(peerInfo: PeerId): Promise<Uint8Array> {
+
   return await multihashing.digest(peerInfo.id, 'sha2-256')
 }
 
@@ -12,7 +13,7 @@ class RoutingTable extends EventEmitter {
 
   constructor(peerId: PeerId) {
     super()
-    peerIdToHash(peerId).then((localNodeId: Buffer) => {
+    peerIdToHash(peerId).then((localNodeId: Uint8Array) => {
       this.kBucket = new KBucket({ localNodeId: localNodeId })
 
       this.kBucket.on('ping', (oldContacts: PeerContact[], newContact: PeerContact) => {
@@ -54,14 +55,23 @@ class RoutingTable extends EventEmitter {
   }
   async closestPeers(peerId: PeerId, count: number): Promise<PeerId[]> {
     const key = await peerIdToHash(peerId)
-    return this.kBucket.closest(key, count).map((p: {id: Buffer, peer: PeerId}) => {
+
+    return this.kBucket.closest(key, count).map((p: {id: Uint8Array, peer: PeerId}) => {
       return p.peer
     })
   }
-  async add(peerId: PeerId) {
+  async addPeer(peerId: PeerId) {
     const id = await peerIdToHash(peerId)
 
     return this.kBucket.add({ id: id, peer: peerId })
+  }
+  async addPeers(peerIds: PeerId[]) {
+
+    for (const peerId of peerIds) {
+      const id = await peerIdToHash(peerId)
+
+      return this.kBucket.add({ id: id, peer: peerId })
+    }
   }
 
   async remove(peerId: PeerId) {

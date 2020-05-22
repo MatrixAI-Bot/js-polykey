@@ -4,6 +4,8 @@ import PeerId from "peer-id"
 import PeerInfo from "../PeerStore/PeerInfo";
 import RoutingTable from "./RoutingTable";
 import PeerStore from "../PeerStore/PeerStore";
+import {RPCMessage} from "../Transport/protos/RPCMessage";
+import pEvent from 'p-event'
 
 class KademliaDHT extends EventEmitter {
 
@@ -11,6 +13,8 @@ class KademliaDHT extends EventEmitter {
   dialer: Dialer
   routingTable: RoutingTable
   peerStore: PeerStore
+
+  private running: boolean
 
   constructor(
     peerId: PeerId,
@@ -23,6 +27,27 @@ class KademliaDHT extends EventEmitter {
     this.dialer = dialer
     this.routingTable = new RoutingTable(this.peerId)
     this.peerStore = peerStore
+    this.running
+  }
+
+
+  /**
+   * Is this DHT running.
+   * @type {bool}
+   */
+  get isStarted () {
+    return this.running
+  }
+
+  /**
+   * Start listening to incoming connections.
+   * @returns {Promise<void>}
+   */
+  async start (): Promise<void> {
+    this.running = true
+
+    // // Start random walk, it will not run if it's disabled
+    // this.randomWalk.start()
   }
 
   async findLocalPeer(peerId: PeerId): Promise<PeerInfo | null> {
@@ -50,8 +75,10 @@ class KademliaDHT extends EventEmitter {
       return localPeerInfo
     }
 
+
     // If local peer was not found, get closest peers and
     // start querying the network
+
     const kBucketSize = this.routingTable.kBucket.numberOfNodesPerKBucket
     const closestPeers = await this.routingTable.closestPeers(peerId, kBucketSize)
 
@@ -59,6 +86,9 @@ class KademliaDHT extends EventEmitter {
     if (closestPeers.length === 0) {
       throw(new Error('Peer lookup failed'))
     }
+
+    console.log('closestPeers');
+    console.log(closestPeers);
 
     // Check if peerId is in closest peer and return if found
     const match = closestPeers.find((p) => p.isEqual(peerId))
@@ -72,15 +102,48 @@ class KademliaDHT extends EventEmitter {
     // Query the network until the peer id is found
     for (const closePeerId of closestPeers) {
       const closePeerInfo = this.peerStore.get(closePeerId)
+
       if (closePeerInfo) {
         const conn = await this.dialer.connectToPeer(closePeerInfo)
-        conn
 
+        const findNodeRequest = RPCMessage.encodeFindNodeMessage(this.peerId, 20, [])
+
+        conn.write(findNodeRequest, (err) => {
+          if (err) {
+            console.log('there was an error when writing findNodeMessage');
+            console.log(err);
+            console.log('findNodeMessage');
+            console.log(findNodeRequest);
+          }
+        })
+
+        const data: Buffer = await pEvent(conn, 'data')
+
+        const { requestingPeerId, numClosestPeers, closestPeerIds } = RPCMessage.decodeFindNodeMessage(data)
+
+        // Found peers!
+        console.log('Found some peers!');
+
+        // Add peers to routing table
+        await this.routingTable.addPeers(closestPeerIds)
+
+        // Get peer info if peerId exists in closestPeerIds
+        for (const id of closestPeerIds) {
+          if (peerId.toB58String() == id.toB58String()) {
+            const peerInfo = this.peerStore.get(id)
+            if (peerInfo) {
+              console.log('Peer was found!!');
+              return peerInfo
+            } else {
+              throw(Error('Peer id was found, but its info does not exist in peer store'))
+            }
+          }
+        }
+
+        return null
       }
     }
     return null
-
-
   }
 }
 

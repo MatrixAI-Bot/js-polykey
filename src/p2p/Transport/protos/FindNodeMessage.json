@@ -1,0 +1,21 @@
+{
+  "nested": {
+    "FindNodeMessage": {
+      "fields": {
+        "requestingPeerInfo": {
+          "type": "bytes",
+          "id": 1
+        },
+        "numClosestPeers": {
+          "type": "int32",
+          "id": 2
+        },
+        "closestPeerInfoArray": {
+          "rule": "repeated",
+          "type": "bytes",
+          "id": 3
+        }
+      }
+    }
+  }
+}

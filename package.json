@@ -35,7 +35,6 @@
     "polykey": "./bin/index.js"
   },
   "dependencies": {
-    "@grpc/grpc-js": "^1.0.4",
     "@types/fs-extra": "^5.0.5",
     "@types/jest": "^25.0.0",
     "@types/jsonfile": "^5.0.0",
@@ -55,8 +54,10 @@
     "multiaddr": "^7.4.3",
     "multihashing-async": "^0.8.1",
     "openpgp": "^4.5.1",
+    "p-event": "^4.1.0",
     "peer-id": "^0.13.12",
     "pipe-ts": "^0.0.8",
+    "protobufjs": "^6.9.0",
     "simple-get": "^3.1.0",
     "stream-to-it": "0.2.0",
     "streaming-iterables": "4.1.2",

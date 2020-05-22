@@ -1,0 +1,26 @@
+{
+  "nested": {
+    "PeerInfo": {
+      "fields": {
+        "id": {
+          "type": "string",
+          "id": 1
+        },
+        "multiaddrs": {
+          "rule": "repeated",
+          "type": "string",
+          "id": 2
+        },
+        "protocols": {
+          "rule": "repeated",
+          "type": "string",
+          "id": 3
+        },
+        "connectedMultiaddr": {
+          "type": "string",
+          "id": 4
+        }
+      }
+    }
+  }
+}

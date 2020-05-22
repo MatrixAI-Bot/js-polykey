@@ -107,12 +107,7 @@ class TCP {
    * @param {function(Connection)} handler
    * @returns {Listener} A TCP listener
    */
-  createListener(options: any, handler?: any): CustomEventListener {
-    if (typeof options === 'function') {
-      handler = options
-      options = {}
-    }
-    options = options || {}
+  createListener( handler: (conn: net.Socket) => void): CustomEventListener {
     return createTCPListener(handler)
   }
 

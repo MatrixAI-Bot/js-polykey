@@ -81,7 +81,6 @@ function createListener(handler: (conn: net.Socket) => void): CustomEventListene
   const server = new CustomTCPServer(async socket => {
     // Avoid uncaught errors caused by unstable connections
     socket.on('error', err => console.log('socket error', err))
-
     if (handler) {
       handler(socket)
     }

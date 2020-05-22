@@ -2,6 +2,7 @@ import { TCP } from "./TCP"
 import { CustomEventListener } from "./Listener"
 import Multiaddr from "multiaddr"
 import net from 'net'
+import { Socket } from "dgram"
 
 function netTcpAddressInfoToMultiaddr(addr: net.AddressInfo): Multiaddr {
   const family = (addr.family === 'IPv4') ? 'ip4' : 'ip6'
@@ -18,9 +19,11 @@ class TransportManager {
 
   transports: Map<string, TCP>
   listeners: Map<string, CustomEventListener[]>
-  constructor() {
+  onConnection: (conn: net.Socket) => void
+  constructor(onConnection: (conn: net.Socket) => void) {
     this.transports = new Map()
     this.listeners = new Map()
+    this.onConnection = onConnection
     this.transports.set('tcp', new TCP())
   }
 
@@ -124,19 +127,12 @@ class TransportManager {
     return null
   }
 
-  onConnection() {
-    console.log("logging from method 'onConnection' in TransportManager");
-  }
-
   /**
    * Starts listeners for each given Multiaddr.
    * @async
    * @param {Multiaddr[]} addrs
    */
   async listen(addrs: Multiaddr[]): Promise<void> {
-    console.log('addrs');
-    console.log(addrs);
-
     if (addrs.length === 0) {
       console.log('no addresses were provided for listening, this node is dial only')
       return
@@ -149,11 +145,8 @@ class TransportManager {
 
       // For each supported multiaddr, create a listener
       for (const addr of supportedAddrs) {
-        console.log('supportedAddrs');
-        console.log(addr);
-
         console.log('creating listener for %s on %s', key, addr)
-        const listener = transport.createListener({}, this.onConnection)
+        const listener = transport.createListener(this.onConnection)
         const existingListeners = this.listeners.get(key)
         if (existingListeners) {
           existingListeners.push(listener)

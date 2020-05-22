@@ -6,8 +6,8 @@ import PeerId from 'peer-id'
 // https://docs.google.com/presentation/d/11qGZlPWu6vEAhA7p3qsQaQtWH7KofEC9dMeBFZ1gYeA/edit#slide=id.g1718cc2bc_0643
 
 /**
- * @param  {Uint8Array} buffer1
- * @param  {Uint8Array} buffer2
+ * @param  {Uint8Array} Uint8Array1
+ * @param  {Uint8Array} Uint8Array2
  * @return {Boolean}
  */
 function arrayEquals(array1: Uint8Array, array2: Uint8Array): boolean {
@@ -41,7 +41,7 @@ type KBucketMetadata = {
 }
 
 export type PeerContact = {
-  id: Buffer,
+  id: Uint8Array,
   peer: PeerId
 }
 
@@ -52,7 +52,7 @@ export type PeerContact = {
  * @extends EventEmitter
  */
 class KBucket extends EventEmitter {
-  localNodeId: Buffer
+  localNodeId: Uint8Array
   numberOfNodesPerKBucket: number
   numberOfNodesToPing: number
   metadata: KBucketMetadata
@@ -86,7 +86,7 @@ class KBucket extends EventEmitter {
    * @param {Object=} options optional
    */
   constructor (options: {
-    localNodeId?: Buffer,
+    localNodeId?: Uint8Array,
     numberOfNodesPerKBucket?: number,
     numberOfNodesToPing?: number,
     distance?: any,
@@ -116,7 +116,7 @@ class KBucket extends EventEmitter {
    * @param  {Object} candidate Contact being added to the k-bucket.
    * @return {Object}           Contact to updated the k-bucket with.
    */
-  static arbiter(incumbent: Buffer, candidate: Buffer): Buffer {
+  static arbiter(incumbent: Uint8Array, candidate: Uint8Array): Uint8Array {
     // this would neeed to be calculated from some kind of vectorClock
     return candidate
     // return incumbent.vectorClock > candidate.vectorClock ? incumbent : candidate
@@ -126,12 +126,12 @@ class KBucket extends EventEmitter {
    * Default distance function. Finds the XOR
    * distance between firstId and secondId.
    *
-   * @param  {Buffer} firstId  Buffer containing first id.
-   * @param  {Buffer} secondId Buffer containing second id.
+   * @param  {Uint8Array} firstId  Uint8Array containing first id.
+   * @param  {Uint8Array} secondId Uint8Array containing second id.
    * @return {Number}          Integer The XOR distance between firstId
    *                           and secondId.
    */
-  static distance(firstId: Buffer, secondId: Buffer): number {
+  static distance(firstId: Uint8Array, secondId: Uint8Array): number {
     let distance = 0
     let i = 0
     const min = Math.min(firstId.length, secondId.length)
@@ -207,7 +207,9 @@ class KBucket extends EventEmitter {
     let contacts: PeerContact[] = []
 
     for (let nodes = [ this.root ], bitIndex = 0; nodes.length > 0 && contacts.length < num;) {
+
       const node = nodes.pop()
+
       if (node) {
         if (node.contacts === null) {
           const detNode = this._determineNode(node, id, bitIndex++)

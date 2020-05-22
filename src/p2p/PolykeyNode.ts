@@ -9,7 +9,10 @@ import { TCP } from "./Transport/TCP";
 import { EventEmitter } from "events";
 import TransportManager from "./Transport/TransportManager";
 import net from 'net'
-
+import fs from 'fs'
+import protons = require('protons')
+import { RPCMessage, MessageType } from "./Transport/protos/RPCMessage";
+import { Socket } from "dgram";
 
 class PolykeyNode extends EventEmitter {
   peerInfo: PeerInfo
@@ -25,13 +28,43 @@ class PolykeyNode extends EventEmitter {
     super()
     this.peerInfo = new PeerInfo(peerId)
     this.peerStore = new PeerStore()
-    this.transportManager = new TransportManager()
+
+    this.transportManager = new TransportManager(this._onTransportConnection.bind(this))
     this.dialer = new Dialer(this.transportManager, this.peerStore)
 
     this.dht = new KademliaDHT(this.peerInfo.id, this.dialer, this.peerStore)
 
     // this._onDiscoveryPeer = this._onDiscoveryPeer.bind(this)
     this._isStarted = false
+  }
+
+  private _onTransportConnection(conn: net.Socket): void {
+    // Set up routing
+    this._handleKademliaRouting.bind(this)(conn)
+  }
+
+  private _handleKademliaRouting(conn: net.Socket) {
+    conn.on('data', async (data) => {
+      if (RPCMessage.messageType(data) === MessageType.FindNode) {
+        // Decode message
+        const { requestingPeerId, numClosestPeers, closestPeerIds } = RPCMessage.decodeFindNodeMessage(data)
+
+        // Go and find closest peers
+        console.log('Go and find closest peers');
+        const closestPeers = await this.dht.routingTable.closestPeers(requestingPeerId, numClosestPeers)
+        const responseBuffer = RPCMessage.encodeFindNodeMessage(requestingPeerId, numClosestPeers, closestPeers)
+        console.log(RPCMessage.decodeFindNodeMessage(responseBuffer));
+
+        conn.write(responseBuffer, (err) => {
+          if (err) {
+            console.log('Error when handling FIND_NODE request (target node)');
+            console.log(err);
+          }
+        })
+      } else {
+        console.log('could not determine which message type it is');
+      }
+    })
   }
 
   async start() {
@@ -56,8 +89,6 @@ class PolykeyNode extends EventEmitter {
     // The addresses may change once the listener starts
     // eg /ip4/0.0.0.0/tcp/0 => /ip4/192.168.1.0/tcp/58751
     this.peerInfo.multiaddrs.clear()
-    console.log('this.transportManager.getAddrs()');
-    console.log(this.transportManager.getAddrs());
 
     for (const ma of this.transportManager.getAddrs()) {
       this.peerInfo.multiaddrs.add(ma)
@@ -67,14 +98,12 @@ class PolykeyNode extends EventEmitter {
     //   this.pubsub && this.pubsub.start()
     // }
 
-    // // DHT subsystem
-    // if (this._config.dht.enabled) {
-    //   this.dht && this.dht.start()
+    // DHT subsystem
+    this.dht.start()
 
-    //   // TODO: this should be modified once random-walk is used as
-    //   // the other discovery modules
-    //   this.dht.on('peer', this._onDiscoveryPeer)
-    // }
+    // // TODO: this should be modified once random-walk is used as
+    // // the other discovery modules
+    // this.dht.on('peer', this._onDiscoveryPeer)
   }
 
   /**
@@ -149,11 +178,10 @@ class PolykeyNode extends EventEmitter {
     return conn
   }
 
-
   async dial(peer: PeerInfo): Promise<net.Socket> {
-    return this.dialProtocol(peer)
+    const socket = await this.dialProtocol(peer)
+    return socket
   }
-
 
   /**
    * Dials to the provided peer and handshakes with the given protocol.
@@ -171,7 +199,7 @@ class PolykeyNode extends EventEmitter {
     const dialable = Dialer.getDialable(peer)
     let connection: net.Socket
     if (dialable instanceof PeerInfo) {
-      this.peerStore.add(dialable)
+      this.addPeer(dialable)
       connection = await this.dialer.connectToPeer(dialable, options)
     } else {
       connection = await this.transportManager.dial(dialable, options)
@@ -179,14 +207,18 @@ class PolykeyNode extends EventEmitter {
 
     return connection
   }
-  // async findPeer(peerId: PeerId): PeerInfo | null {
-  //   const peer = await this.dht.find(peerId)
 
-  //   const peerId = this.peerStore.get(peer)
-  //   if ()
+  private addPeer(peerInfo: PeerInfo) {
+    this.peerStore.add(peerInfo)
+    this.dht.routingTable.addPeer(peerInfo.id)
+  }
 
+  async findPeer(peerId: PeerId): Promise<PeerInfo | null> {
 
-  // }
+    const peerInfo = await this.dht.findPeer(peerId)
+
+    return peerInfo
+  }
 
   // pingPeer(peerId: PeerId) {
 
