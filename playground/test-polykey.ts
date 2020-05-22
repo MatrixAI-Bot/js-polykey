@@ -15,14 +15,21 @@ import { EncryptedFS } from 'js-encryptedfs'
 import Multiaddr from 'multiaddr'
 import {TCP} from '../src/p2p/Transport/TCP'
 import { MultiaddrConnection } from '../src/p2p/Transport/SocketToConnection'
+import PolykeyNode from '../src/p2p/PolykeyNode'
+import PeerId from 'peer-id'
 
 const main = async function() {
+
+  const peerId = await PeerId.create()
+  const node = new PolykeyNode(peerId)
+  await node.start()
+
   const tcp1 = new TCP()
 
   const listener = tcp1.createListener({}, (socket: MultiaddrConnection) => {
     console.log('new connection opened')
     pipe(
-      ['hello'],
+      ['hello robdog'],
       socket
     )
   })

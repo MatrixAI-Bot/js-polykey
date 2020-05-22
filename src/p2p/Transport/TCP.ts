@@ -1,6 +1,5 @@
 import Multiaddr from "multiaddr";
 import net from 'net'
-import { socketToConnection, MultiaddrConnection} from './SocketToConnection'
 import {createListener as createTCPListener, CustomEventListener} from "./Listener";
 import { CODE_CIRCUIT, CODE_P2P } from "./constants";
 import mafmt from 'mafmt'
@@ -30,14 +29,14 @@ class TCP {
 
   }
 
-  async dial(multiaddr: Multiaddr, options: any) {
+  async dial(multiaddr: Multiaddr, options: any): Promise<net.Socket> {
     options = options || {}
     const socket = await this._connect(multiaddr, options)
-    const maConn = socketToConnection(socket, { remoteAddr: multiaddr, signal: options.signal })
-    console.log('new outbound connection %s', maConn.remoteAddr)
+    // const maConn = socketToConnection(socket, { remoteAddr: multiaddr, signal: options.signal })
+    console.log('new outbound connection %s', socket.address())
     // const conn = await this._upgrader.upgradeOutbound(maConn)
     // console.log('outbound connection %s upgraded', maConn.remoteAddr)
-    return maConn
+    return socket
   }
 
   /**

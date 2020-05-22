@@ -1,7 +1,7 @@
 import Multiaddr = require("multiaddr")
 import { TCP } from "../Transport/TCP"
 import Dialer from "./Dialer"
-import { MultiaddrConnection } from "../Transport/SocketToConnection"
+import net from 'net'
 
 class DialRequest {
   /**
@@ -18,7 +18,7 @@ class DialRequest {
 
   addrs: Multiaddr[]
   dialer: Dialer
-  dialAction: (addr: Multiaddr, options: any) => Promise<MultiaddrConnection>
+  dialAction: (addr: Multiaddr, options: any) => Promise<net.Socket>
   constructor (
     addrs: Multiaddr[],
     dialer: Dialer,
@@ -32,29 +32,28 @@ class DialRequest {
   /**
    * @async
    * @param {object} options
-   * @param {AbortSignal} options.signal An AbortController signal
    * @returns {Connection}
    */
-  async run(options: any): Promise<MultiaddrConnection> {
+  async run(options: any): Promise<net.Socket> {
     const tokens = this.dialer.getTokens(this.addrs.length)
     // If no tokens are available, throw
     if (tokens.length < 1) {
-      throw(new Error('No dial tokens available'), 'ERR_NO_DIAL_TOKENS')
+      throw(new Error('No dial tokens available'))
     }
 
     const tokenHolder = new Array()
     tokens.forEach(token => tokenHolder.push(token))
-    const dialAbortControllers = this.addrs.map(() => new AbortController())
+    // const dialAbortControllers = this.addrs.map(() => new AbortController())
     let completedDials = 0
 
     try {
       return await Promise.race(this.addrs.map(async (addr, i) => {
         const token = await tokenHolder.shift() // get token
-        let conn: MultiaddrConnection
+        let conn: net.Socket
         try {
           conn = await this.dialAction(addr, options)
-          // Remove the successful AbortController so it is not aborted
-          dialAbortControllers.splice(i, 1)
+          // // Remove the successful AbortController so it is not aborted
+          // dialAbortControllers.splice(i, 1)
         } finally {
           completedDials++
           // If we have more or equal dials remaining than tokens, recycle the token, otherwise release it
@@ -68,7 +67,7 @@ class DialRequest {
         return conn
       }))
     } finally {
-      dialAbortControllers.map(c => c.abort()) // success/failure happened, abort everything else
+      // dialAbortControllers.map(c => c.abort()) // success/failure happened, abort everything else
       tokens.forEach(token => this.dialer.releaseToken(token)) // release tokens back to the dialer
     }
   }

@@ -10,7 +10,7 @@ import PeerInfo from './PeerInfo'
  * @fires PeerStore#change:multiaddrs
  */
 class PeerStore extends EventEmitter {
-  private peers: Map<PeerId, PeerInfo>
+  peers: Map<PeerId, PeerInfo>
   constructor () {
     super()
 

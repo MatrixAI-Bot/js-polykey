@@ -153,8 +153,6 @@ class KBucket extends EventEmitter {
     let node = this.root
 
     while (node.contacts === null) {
-      console.log('skljdf');
-
       // this is not a leaf node but an inner node with 'low' and 'high'
       // branches; we will check the appropriate bit of the identifier and
       // delegate to the appropriate node for further processing

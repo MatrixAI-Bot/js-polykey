@@ -32,8 +32,8 @@ export default class KeyManager {
   // TODO: wouldn't keymanager have many sym keys keys to look after?
   private _keyPair: KeyPair = {private: '', public: '', passphrase: ''}
   private _identity: Object | undefined = undefined
-  private _key!: Buffer
-  private _salt!: Buffer
+  _key!: Buffer
+  _salt!: Buffer
   private _passphrase!: string
   private _storePath: string
   private _fs: typeof fs
@@ -239,6 +239,71 @@ export default class KeyManager {
     }
   }
 
+  async storeProfile(name: string, storeKey: boolean = false): Promise<void> {
+    const profilePath = Path.join(this._storePath, name)
+    if (!this._key && !this._salt) {
+      throw Error('There is nothing loaded to store')
+    }
+    try {
+      const profileExists = await fs.pathExists(profilePath)
+      if (profileExists) {
+        console.warn(`Writing to already existing profile: ${name}. Existing data will be overwritten.`)
+      } else {
+        await fs.mkdirs(profilePath)
+      }
+      if (storeKey && this._key) {
+        await fs.writeFile(Path.join(profilePath, 'key'), this._key)
+      }
+      if (this._salt) {
+        await fs.writeFile(Path.join(profilePath, 'salt'), this._salt)
+      }
+    } catch (err) {
+      throw Error('Writing profile')
+    }
+  }
+
+  async storeProfileSync(name: string, storeKey: boolean = false): Promise<void> {
+    const profilePath = Path.join(this._storePath, name)
+    if (!this._key && !this._salt) {
+      throw Error('There is nothing loaded to warrant storage')
+    }
+    try {
+      const profileExists = await fs.pathExistsSync(profilePath)
+      if (profileExists) {
+        console.warn(`Writing to already existing profile: ${name}. Existing data will be overwritten.`)
+      } else {
+        await fs.mkdirsSync(profilePath)
+      }
+      if (storeKey && this._key) {
+        await fs.writeFileSync(Path.join(profilePath, 'key'), this._key)
+      }
+      if (this._salt) {
+        await fs.writeFileSync(Path.join(profilePath, 'salt'), this._key)
+      }
+    } catch (err) {
+      throw Error('Writing profile')
+    }
+  }
+
+  async loadProfile(name: string, passphrase?: string): Promise<void> {
+    const profilePath = Path.join(this._storePath, name)
+    try {
+      if (passphrase) {
+        this._salt = await fs.readFile(Path.join(profilePath, 'salt'))
+        // TODO: use async version
+        this.generateKeySync(passphrase, this._salt)
+        return
+      }
+    } catch(err) {
+      throw Error('Loading profile salt from disk')
+    }
+    try {
+      this._key = await fs.readFile(Path.join(profilePath, 'key'))
+    } catch (err) {
+      throw Error('Loading profile key from disk')
+    }
+  }
+
   importKeyBuffer(key: Buffer): void {
     this._key = key
   }
@@ -439,6 +504,14 @@ export default class KeyManager {
     return this._key
   }
 
+  async storePrivateKey(path: string): Promise<void> {
+    await fs.writeFile(path, this._keyPair.private)
+  }
+
+  async storePublicKey(path: string): Promise<void> {
+    await fs.writeFile(path, this._keyPair.public)
+  }
+
   isLoaded(): boolean {
     if (this._key) {
       return true
@@ -447,3 +520,4 @@ export default class KeyManager {
   }
   // TODO: when storing and loading profiles you should be able to specify a location not just '~/.efs'
 }
+

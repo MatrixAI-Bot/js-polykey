@@ -1,11 +1,10 @@
-import { TCP } from "../Transport/TCP"
 import PeerStore from "../PeerStore/PeerStore"
 import DialRequest from "./DialRequest"
-import Multiaddr = require("multiaddr")
+import Multiaddr from "multiaddr"
 import PeerInfo from "../PeerStore/PeerInfo"
 import PeerId = require("peer-id")
-import { MultiaddrConnection } from "../Transport/SocketToConnection"
 import TransportManager from "../Transport/TransportManager"
+import net from 'net'
 
 
 const DIAL_TIMEOUT = 30e3 // How long in ms a dial attempt is allowed to take
@@ -14,7 +13,7 @@ const MAX_PER_PEER_DIALS = 4 // Allowed parallel dials per DialRequest
 
 type PendingDial = {
   dialRequest: DialRequest,
-  promise: Promise<MultiaddrConnection>,
+  promise: Promise<net.Socket>,
   destroy: () => void
 }
 
@@ -23,7 +22,7 @@ type DialTarget = {
   addrs: Multiaddr[]
 }
 
-type Dialable = PeerInfo | Multiaddr
+export type Dialable = PeerInfo | Multiaddr
 
 class Dialer {
   transportManager: TransportManager
@@ -81,8 +80,14 @@ class Dialer {
    * @param {AbortSignal} [options.signal] An AbortController signal
    * @returns {Promise<Connection>}
    */
-  async connectToPeer(peer: PeerInfo, options: any = {}): Promise<MultiaddrConnection> {
+  async connectToPeer(peer: PeerInfo, options: any = {}): Promise<net.Socket> {
+
     const dialTarget = this._createDialTarget(peer)
+    console.log('peer');
+    console.log(peer);
+
+    console.log(peer);
+
     if (dialTarget.addrs.length === 0) {
       throw(new Error('The dial request has no addresses'))
     }
@@ -144,10 +149,10 @@ class Dialer {
    * @returns {PendingDial}
    */
   _createPendingDial (dialTarget: DialTarget, options: any): PendingDial {
-    const dialAction = (addr, options) => {
-      if (options.signal.aborted) {
-        throw(new Error('already aborted'))
-      }
+    const dialAction = (addr: Multiaddr, options) => {
+      // if (options.signal.aborted) {
+      //   throw(new Error('already aborted'))
+      // }
       return this.transportManager.dial(addr, options)
     }
 

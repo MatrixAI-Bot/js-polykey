@@ -29,7 +29,7 @@ const vaultKeySize = 128/8 // in bytes
 
 export default class Polykey {
   private polykeyDirName: string
-  private polykeyPath: string
+  polykeyPath: string
   private fs: typeof fs
   private vaults:Map<string, Vault>
   private key: Buffer

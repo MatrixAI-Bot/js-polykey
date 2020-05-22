@@ -1,5 +1,4 @@
 import Multiaddr from "multiaddr"
-import { socketToConnection, MultiaddrConnection } from "./SocketToConnection"
 import { EventEmitter } from "events"
 import net from 'net'
 import PeerId = require("peer-id")
@@ -12,9 +11,11 @@ import { CODE_P2P } from "./constants"
  * @private
  * @param {MultiaddrConnection} maConn
  */
-async function attemptClose(maConn: MultiaddrConnection) {
+async function attemptClose(maConn: net.Socket) {
   try {
-    maConn && await maConn.close()
+    maConn.end(() => {
+      console.log('Socket has been closed');
+    })
   } catch (err) {
     console.log('an error occurred closing the connection', err)
   }
@@ -50,7 +51,7 @@ function getMultiaddrs(proto: string, ip: string, port: any) {
 }
 
 class CustomTCPServer extends net.Server {
-  __connections: MultiaddrConnection[]
+  __connections: net.Socket[]
   constructor(connectionListener?: ((socket: net.Socket) => void) | undefined) {
     super(connectionListener)
     this.__connections = []
@@ -65,41 +66,26 @@ class CustomEventListener extends EventEmitter {
 
   }
   async listen(multiaddr: Multiaddr) {
-
+    return null
   }
+
   getAddrs(): Multiaddr[] {
     return []
   }
 
 }
 
-function createListener(handler: (conn: MultiaddrConnection) => void): CustomEventListener {
+function createListener(handler: (conn: net.Socket) => void): CustomEventListener {
   const listener = new CustomEventListener()
 
   const server = new CustomTCPServer(async socket => {
     // Avoid uncaught errors caused by unstable connections
     socket.on('error', err => console.log('socket error', err))
 
-    let maConn: MultiaddrConnection
-    let conn: MultiaddrConnection
-    try {
-      maConn = socketToConnection(socket, { listeningAddr })
-      console.log('new inbound connection %s', maConn.remoteAddr)
-      // conn = await upgrader.upgradeInbound(maConn)
-      conn = maConn
-    } catch (err) {
-      console.log('inbound connection failed', err)
-      return attemptClose(maConn!)
-    }
-
-    console.log('inbound connection %s upgraded', maConn.remoteAddr)
-
-    trackConn(server, maConn)
-
     if (handler) {
-      handler(conn)
+      handler(socket)
     }
-    listener.emit('connection', conn)
+    listener.emit('connection', socket)
   })
 
   server
@@ -135,6 +121,7 @@ function createListener(handler: (conn: MultiaddrConnection) => void): CustomEve
     return new Promise((resolve, reject) => {
       const options = listeningAddr.toOptions()
       server.listen(options.port, options.host, undefined, () => {
+
         console.log('Listening on %s', server.address())
         resolve()
       })
@@ -163,14 +150,14 @@ function createListener(handler: (conn: MultiaddrConnection) => void): CustomEve
   return listener
 }
 
-function trackConn (server: CustomTCPServer, maConn: MultiaddrConnection) {
-  server.__connections.push(maConn)
+// function trackConn (server: CustomTCPServer, maConn: MultiaddrConnection) {
+//   server.__connections.push(maConn)
 
-  const untrackConn = () => {
-    server.__connections = server.__connections.filter(c => c !== maConn)
-  }
+//   const untrackConn = () => {
+//     server.__connections = server.__connections.filter(c => c !== maConn)
+//   }
 
-  maConn.conn.once('close', untrackConn)
-}
+//   maConn.conn.once('close', untrackConn)
+// }
 
 export { createListener, CustomTCPServer, CustomEventListener }

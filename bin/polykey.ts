@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // this will be a CLI entrypoint to this library
-// we expect that this can be used as a CLI 
+// we expect that this can be used as a CLI
 // application directly as js-polykey
 
 import { program } from 'commander'
@@ -9,6 +9,7 @@ import inquirer from 'inquirer'
 import PolyKey from '../src/Polykey'
 import chalk from 'chalk'
 import os from 'os'
+import fs from 'fs'
 
 let pk: PolyKey
 // Write a `file`
@@ -34,7 +35,7 @@ function initPolyKey(
         }
         // import keys if provided
         if (publicKeyPath !== undefined) {
-            pk._km.loadPublicKey(publicKeyPath)
+            pk.km.loadPublicKey(publicKeyPath)
             if (verbose) {
                 console.log(chalk.green('public key successfully imported'))
             }
@@ -42,7 +43,7 @@ function initPolyKey(
         if (privateKeyPath !== undefined) {
             if (privatePassphrase !== undefined) {
                 try {
-                    pk._km.loadPrivateKey(privateKeyPath)
+                    pk.km.loadPrivateKey(privateKeyPath)
                     if (verbose) {
                         console.log(chalk.green('private key successfully imported'))
                     }
@@ -57,8 +58,8 @@ function initPolyKey(
             console.log(chalk.green(`PolyKey was initialized successfully at '${pk.polykeyPath}'`));
         }
         // Initialization of temp directory (for testing)
-        tempDir = pk._fs.mkdtempSync(`${os.tmpdir}/polykeytest`, undefined).toString()
-        pk._fs.writeFileSync(`${tempDir}/file`, Buffer.from('I am to be signed'))
+        tempDir = fs.mkdtempSync(`${os.tmpdir}/polykeytest`, undefined).toString()
+        fs.writeFileSync(`${tempDir}/file`, Buffer.from('I am to be signed'))
     } catch (err) {
         console.log(chalk.red(`Failed to initialize polykey: ${err.message}`))
     }
@@ -114,14 +115,14 @@ const nodeStart = node.command('start')
     .description('start listening')
     .action(async (options) => {
         console.log('something something something');
-        
+
     })
 
 /*******************************************/
 // secrets
 const secrets = polykey.command('secrets')
     .description('manipulate vault secrets')
-    
+
 /*******************************************/
 // secrets list
 const secretsList = secrets.command('list')
@@ -276,7 +277,7 @@ vaultDestroy
                 console.log(`vault '${vaultName}' does not exist`)
                 return
             }
-            
+
             await pk.destroyVault(vaultName)
             console.log(`vault '${vaultName}' destroyed ${await pk.vaultExists(vaultName) ? 'un-' : ''}successfully`)
         } catch (err) {

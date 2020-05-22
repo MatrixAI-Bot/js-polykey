@@ -1,14 +1,14 @@
 import multihashing from 'multihashing-async'
 import PeerId from 'peer-id'
-import { KBucket, PeerContact } from './KBucket'
+import KBucket, { PeerContact } from './KBucket'
 import { EventEmitter } from 'events'
 
 async function peerIdToHash(peerInfo: PeerId): Promise<Buffer> {
   return await multihashing.digest(peerInfo.id, 'sha2-256')
 }
 
-export class DistributedHashTable extends EventEmitter {
-  private kBucket: KBucket
+class RoutingTable extends EventEmitter {
+  kBucket: KBucket
 
   constructor(peerId: PeerId) {
     super()
@@ -35,8 +35,7 @@ export class DistributedHashTable extends EventEmitter {
   }
 
   async find(peerId: PeerId): Promise<PeerId | null> {
-    const key = await peerIdToHash(peerId)
-    const closest = this.closestPeer(key)
+    const closest = await this.closestPeer(peerId)
 
     if (closest && closest.isEqual(peerId)) {
       return closest
@@ -45,15 +44,16 @@ export class DistributedHashTable extends EventEmitter {
     }
   }
 
-  closestPeer(key: Buffer): PeerId | null {
-    const res = this.closestPeers(key, 1)
+  async closestPeer(peerId: PeerId): Promise<PeerId | null> {
+    const res = await this.closestPeers(peerId, 1)
     if (res.length > 0) {
       return res[0]
     } else {
       return null
     }
   }
-  closestPeers(key: Buffer, count: number): PeerId[] {
+  async closestPeers(peerId: PeerId, count: number): Promise<PeerId[]> {
+    const key = await peerIdToHash(peerId)
     return this.kBucket.closest(key, count).map((p: {id: Buffer, peer: PeerId}) => {
       return p.peer
     })
@@ -71,21 +71,4 @@ export class DistributedHashTable extends EventEmitter {
   }
 }
 
-// async function main() {
-//   // _determineNode(Buffer.from('something hahaha'), 5)
-
-//   const peerId1 = await PeerId.create()
-
-//   const routingTable = new DistributedHashTable(peerId1)
-
-//   const peerId2 = await PeerId.create()
-
-//   console.log('found')
-
-//   await routingTable.add(peerId2)
-//   const found = await routingTable.find(peerId2)
-//   console.log(found === null)
-//   console.log(found)
-
-// }
-// main()
+export default RoutingTable

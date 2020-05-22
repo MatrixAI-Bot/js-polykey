@@ -1,7 +1,12 @@
 import { TCP } from "./TCP"
 import { CustomEventListener } from "./Listener"
 import Multiaddr from "multiaddr"
-import { MultiaddrConnection } from "./SocketToConnection"
+import net from 'net'
+
+function netTcpAddressInfoToMultiaddr(addr: net.AddressInfo): Multiaddr {
+  const family = (addr.family === 'IPv4') ? 'ip4' : 'ip6'
+  return new Multiaddr(`/${family}/${addr.address}/tcp/${addr.port}`)
+}
 
 class TransportManager {
   /**
@@ -16,6 +21,7 @@ class TransportManager {
   constructor() {
     this.transports = new Map()
     this.listeners = new Map()
+    this.transports.set('tcp', new TCP())
   }
 
   /**
@@ -70,7 +76,7 @@ class TransportManager {
    * @param {*} options
    * @returns {Promise<Connection>}
    */
-  async dial(multiaddr: Multiaddr, options: any): Promise<MultiaddrConnection> {
+  async dial(multiaddr: Multiaddr, options?: any): Promise<net.Socket> {
     const transport = this.transportForMultiaddr(multiaddr)
     if (!transport) {
       throw(new Error(`No transport available for address ${multiaddr.toString()}`))
@@ -128,6 +134,9 @@ class TransportManager {
    * @param {Multiaddr[]} addrs
    */
   async listen(addrs: Multiaddr[]): Promise<void> {
+    console.log('addrs');
+    console.log(addrs);
+
     if (addrs.length === 0) {
       console.log('no addresses were provided for listening, this node is dial only')
       return
@@ -136,16 +145,21 @@ class TransportManager {
     const couldNotListen: string[] = []
     for (const [key, transport] of this.transports.entries()) {
       const supportedAddrs = transport.filter(addrs)
-      const tasks: Promise<void>[] = []
+      const tasks: Promise<net.AddressInfo | null>[] = []
 
       // For each supported multiaddr, create a listener
       for (const addr of supportedAddrs) {
+        console.log('supportedAddrs');
+        console.log(addr);
+
         console.log('creating listener for %s on %s', key, addr)
         const listener = transport.createListener({}, this.onConnection)
         const existingListeners = this.listeners.get(key)
         if (existingListeners) {
           existingListeners.push(listener)
           this.listeners.set(key, existingListeners)
+        } else {
+          this.listeners.set(key, [listener])
         }
 
         // We need to attempt to listen on everything

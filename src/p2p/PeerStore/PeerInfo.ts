@@ -9,6 +9,7 @@ class PeerInfo {
   constructor(id: PeerId, multiaddrs?: Multiaddr[]) {
     this.id = id
     this.multiaddrs = new Set(multiaddrs)
+    this.protocols = new Set()
   }
 
   connect(multiaddr: Multiaddr) {
