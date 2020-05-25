@@ -34,7 +34,7 @@ type PeerMessage = {
   encrypted: Buffer
 }
 
-class MulticastDNS extends EventEmitter {
+class MulticastPeerDiscovery {
   peerStore: PeerStore
   keyManager: KeyManager
 
@@ -48,8 +48,6 @@ class MulticastDNS extends EventEmitter {
     peerStore: PeerStore,
     keyManager: KeyManager
   ) {
-    super()
-
     this.peerStore = peerStore
     this.keyManager = keyManager
 
@@ -204,4 +202,4 @@ class MulticastDNS extends EventEmitter {
   }
 }
 
-export default MulticastDNS
+export default MulticastPeerDiscovery
