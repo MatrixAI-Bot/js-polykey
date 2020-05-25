@@ -1,4 +1,4 @@
-import { EncryptedFS } from "js-encryptedfs";
+import { EncryptedFS } from "encryptedfs";
 
 export type KeyPair = {
     private: string,

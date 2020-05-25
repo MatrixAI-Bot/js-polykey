@@ -8,10 +8,9 @@ import { KeyPair } from './util'
 
 // js imports
 const kbpgp = require('kbpgp')
-var F = kbpgp["const"].openpgp;
-const zxcvbn = require('zxcvbn')
-const vfs = require('virtualfs')
 
+const F = kbpgp["const"].openpgp;
+import zxcvbn from 'zxcvbn'
 // TODO: remember that the symmetric keys will just be stored in vault directories.
 // I feel the symmetric key funciton here are not needed.
 // This should be dealing with asymm key management
@@ -63,7 +62,8 @@ export default class KeyManager {
     var options = {
       userid: `${name} <${email}>`,
       primary: {
-        nbits: 4096,
+        // nbits: 4096,
+        nbits: 1024,
         flags: F.certify_keys | F.sign_data | F.auth | F.encrypt_comm | F.encrypt_storage,
         expire_in: 0  // never expire
       },
@@ -99,7 +99,6 @@ export default class KeyManager {
               this._keyPair = keypair
               // Set the new identity
               this._identity = identity
-              console.log(identity);
 
               resolve(keypair)
               // TODO: revocation signature?
@@ -262,23 +261,23 @@ export default class KeyManager {
     }
   }
 
-  async storeProfileSync(name: string, storeKey: boolean = false): Promise<void> {
+  storeProfileSync(name: string, storeKey: boolean = false): void {
     const profilePath = Path.join(this._storePath, name)
     if (!this._key && !this._salt) {
       throw Error('There is nothing loaded to warrant storage')
     }
     try {
-      const profileExists = await fs.pathExistsSync(profilePath)
+      const profileExists = fs.pathExistsSync(profilePath)
       if (profileExists) {
         console.warn(`Writing to already existing profile: ${name}. Existing data will be overwritten.`)
       } else {
-        await fs.mkdirsSync(profilePath)
+        fs.mkdirsSync(profilePath)
       }
       if (storeKey && this._key) {
-        await fs.writeFileSync(Path.join(profilePath, 'key'), this._key)
+        fs.writeFileSync(Path.join(profilePath, 'key'), this._key)
       }
       if (this._salt) {
-        await fs.writeFileSync(Path.join(profilePath, 'salt'), this._key)
+        fs.writeFileSync(Path.join(profilePath, 'salt'), this._key)
       }
     } catch (err) {
       throw Error('Writing profile')
@@ -361,13 +360,13 @@ export default class KeyManager {
     }
   }
 
-  async exportProfileSync(name: string, storeKey: boolean = false): Promise<void> {
+  exportProfileSync(name: string, storeKey: boolean = false): void {
     const profilePath = Path.join(this._storePath, name)
     if (!this._key && !this._salt) {
       throw Error('There is nothing loaded to warrant storage')
     }
     try {
-      const profileExists = await fs.pathExistsSync(profilePath)
+      const profileExists = fs.pathExistsSync(profilePath)
       if (profileExists) {
         console.warn(`Writing to already existing profile: ${name}. Existing data will be overwritten.`)
       } else {
@@ -437,7 +436,7 @@ export default class KeyManager {
   }
 
   // Sign data
-  signData(data: Buffer | string, withKey: Buffer | undefined = undefined, keyPassphrase: string | undefined = undefined): Promise<Buffer> {
+  async signData(data: Buffer | string, withKey: Buffer | undefined = undefined, keyPassphrase: string | undefined = undefined): Promise<Buffer> {
     return new Promise<Buffer>(async (resolve, reject) => {
       let resolvedIdentity: Object
       if (withKey !== undefined) {
@@ -464,7 +463,7 @@ export default class KeyManager {
   }
 
   // Verify data
-  verifyData(data: Buffer | string, signature: Buffer, withKey: Buffer | undefined = undefined): Promise<string> {
+  async verifyData(data: Buffer | string, signature: Buffer, withKey: Buffer | undefined = undefined): Promise<string> {
     return new Promise<string>(async (resolve, reject) => {
       var ring = new kbpgp.keyring.KeyRing;
       let resolvedIdentity: Object
@@ -476,7 +475,7 @@ export default class KeyManager {
         throw(Error('no identity available for signing'))
       }
 
-      ring.add_key_manager(this._identity)
+      ring.add_key_manager(resolvedIdentity)
       const params = {
         armored: signature,
         data: data,
@@ -495,6 +494,60 @@ export default class KeyManager {
           resolve(km.get_pgp_fingerprint().toString('hex'));
         } else {
           reject(Error('could not verify file'))
+        }
+      })
+    })
+  }
+
+  // Encrypt data
+  async encryptData(data: Buffer, forPubKey: Buffer): Promise<string> {
+    return new Promise<string>(async (resolve, reject) => {
+      let resolvedIdentity: Object
+      try {
+        resolvedIdentity = await this.getIdentityFromPublicKey(forPubKey)
+      } catch (err) {
+        throw(Error(`Identity could not be resolved for encrypting: ${err}`))
+      }
+      const params = {
+        msg: data,
+        encrypt_for: resolvedIdentity
+      }
+      kbpgp.box(params, (err: Error, result_string: string, result_buffer: Buffer) => {
+        if (err) {
+          reject(err)
+        }
+        resolve(result_string)
+      })
+    })
+  }
+
+  // Encrypt data
+  async decryptData(data: string, withKey: Buffer | undefined = undefined): Promise<Buffer> {
+    return new Promise<Buffer>(async (resolve, reject) => {
+      var ring = new kbpgp.keyring.KeyRing;
+      let resolvedIdentity: Object
+      if (withKey !== undefined) {
+        resolvedIdentity = await this.getIdentityFromPublicKey(withKey)
+      } else if (this._identity !== undefined) {
+        resolvedIdentity = this._identity
+      } else {
+        throw(Error('no identity available for signing'))
+      }
+
+      ring.add_key_manager(resolvedIdentity)
+      const params = {
+        armored: data,
+        keyfetch: ring
+      }
+      kbpgp.unbox(params, (err, literals) => {
+        if (err) {
+          reject(err)
+        }
+        try {
+          const decryptedData = Buffer.from(literals[0].toString())
+          resolve(decryptedData)
+        } catch (err) {
+          reject(err)
         }
       })
     })

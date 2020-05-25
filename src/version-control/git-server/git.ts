@@ -12,7 +12,7 @@ import gitHttp from 'isomorphic-git/http/web'
 import { EventEmitter } from 'events'
 
 import { Util } from './util'
-import { EncryptedFS } from 'js-encryptedfs'
+import { EncryptedFS } from 'encryptedfs'
 import { GitFS } from '@polykey/util'
 
 const services = ['upload-pack', 'receive-pack']

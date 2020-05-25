@@ -1,7 +1,7 @@
 import { Root, Type } from "protobufjs"; // respectively "./node_modules/protobufjs"
 import PeerId = require("peer-id");
 import Multiaddr from "multiaddr";
-import PeerInfo from "../../PeerStore/PeerInfo";
+import PeerInfo from "../PeerStore/PeerInfo";
 
 enum MessageType {
   Ping,
@@ -13,6 +13,12 @@ type FindNodeMessage = {
   requestingPeerInfo: PeerInfo
   numClosestPeers: number
   closestPeerInfoArray: PeerInfo[]
+}
+type HandshakeMessage = {
+  requestedPeerIdB58String: string
+  requestingPubKey: Buffer
+  message: Buffer
+  responsePeerInfo?: PeerInfo
 }
 
 class RPCMessage {
@@ -94,7 +100,7 @@ class RPCMessage {
     }
   }
 
-  private static encodePeerInfo(peerInfo: PeerInfo): Uint8Array {
+  static encodePeerInfo(peerInfo: PeerInfo): Uint8Array {
     const jsonDescriptor = require('./PeerInfo.json')
 
     const root = Root.fromJSON(jsonDescriptor);
@@ -129,7 +135,7 @@ class RPCMessage {
     return buffer
   }
 
-  private static decodePeerInfo(buffer: Uint8Array): PeerInfo {
+  static decodePeerInfo(buffer: Uint8Array): PeerInfo {
     const jsonDescriptor = require('./PeerInfo.json')
 
     const root = Root.fromJSON(jsonDescriptor);
@@ -152,9 +158,6 @@ class RPCMessage {
 
     const multiaddrs: Multiaddr[] = []
     for (const maBuf of object.multiaddrs) {
-      console.log('maBuf');
-      console.log(maBuf);
-
       const multiaddr = new Multiaddr(maBuf)
       multiaddrs.push(multiaddr)
     }
@@ -169,25 +172,106 @@ class RPCMessage {
     return peerInfo
   }
 
+  static encodeHandShakeMessage(requestedPeerIdB58String: string, requestingPubKey: Buffer, messageBuf: Buffer, responsePeerInfo?: PeerInfo): Uint8Array {
+    const jsonDescriptor = require('./HandshakeMessage.json')
+
+    const root = Root.fromJSON(jsonDescriptor);
+
+    const HandshakeMessage = root.lookupType("HandshakeMessage");
+
+    const responsePeerInfoBuf = (responsePeerInfo) ? this.encodePeerInfo(responsePeerInfo) : null
+
+    // Exemplary payload
+    const payload = {
+      requestedPeerIdB58String: requestedPeerIdB58String,
+      requestingPubKey: requestingPubKey,
+      message: messageBuf,
+      responsePeerInfo: responsePeerInfoBuf
+    }
+
+    // Verify the payload if necessary (i.e. when possibly incomplete or invalid)
+    const errMsg = HandshakeMessage.verify(payload);
+    if (errMsg) {
+        throw Error(errMsg);
+    }
+
+    // Create a new message
+    const message = HandshakeMessage.create(payload); // or use .fromObject if conversion is necessary
+
+    // Encode a message to an Uint8Array (browser) or Buffer (node)
+    const buffer = HandshakeMessage.encode(message).finish();
+
+    return buffer
+  }
+
+  static decodeHandShakeMessage(buffer: Uint8Array): HandshakeMessage {
+    const jsonDescriptor = require('./HandshakeMessage.json')
+
+    const root = Root.fromJSON(jsonDescriptor);
+
+    const HandshakeMessage = root.lookupType("HandshakeMessage");
+
+    // Decode an Uint8Array (browser) or Buffer (node) to a message
+    const message = HandshakeMessage.decode(buffer);
+
+    // Maybe convert the message back to a plain object
+    const object = HandshakeMessage.toObject(message, {
+      enums: String,  // enums as string names
+      longs: String,  // longs as strings (requires long.js)
+      bytes: String,  // bytes as base64 encoded strings
+      defaults: true, // includes default values
+      arrays: true,   // populates empty arrays (repeated fields) even if defaults=false
+      objects: true,  // populates empty objects (map fields) even if defaults=false
+      oneofs: true    // includes virtual oneof fields set to the present field's name
+    });
+
+    const requestingPubKey: Buffer = Buffer.from(object.requestingPubKey, 'base64')
+    const messageBuf: Buffer = Buffer.from(object.message, 'base64')
+    let responsePeerInfo: PeerInfo | undefined = undefined
+    if (object.responsePeerInfo) {
+      responsePeerInfo = this.decodePeerInfo(Buffer.from(object.responsePeerInfo, 'base64'))
+    }
+
+    return {
+      requestedPeerIdB58String: object.requestedPeerIdB58String,
+      requestingPubKey: requestingPubKey,
+      message: messageBuf,
+      responsePeerInfo: responsePeerInfo
+    }
+  }
+
 }
 
-async function main() {
+// async function main() {
 
-  const peerId1 = await PeerId.create()
-  const peerInfo1 = new PeerInfo(peerId1, [new Multiaddr('/ip4/0.0.0.0/tcp/4041')])
-  const peerId2 = await PeerId.create()
-  const peerInfo2 = new PeerInfo(peerId2, [new Multiaddr('/ip4/0.0.0.0/tcp/4042')])
-  const peerId3 = await PeerId.create()
-  const peerInfo3 = new PeerInfo(peerId3, [new Multiaddr('/ip4/0.0.0.0/tcp/4043')])
+//   const peerId1 = await PeerId.create()
+//   const peerInfo1 = new PeerInfo(peerId1, [new Multiaddr('/ip4/0.0.0.0/tcp/4041')])
+//   const peerId2 = await PeerId.create()
+//   const peerInfo2 = new PeerInfo(peerId2, [new Multiaddr('/ip4/0.0.0.0/tcp/4042')])
+//   const peerId3 = await PeerId.create()
+//   const peerInfo3 = new PeerInfo(peerId3, [new Multiaddr('/ip4/0.0.0.0/tcp/4043')])
+
+//   // const encoded = RPCMessage.encodePeerInfo(peerInfo1)
+//   // console.log(encoded);
+//   // const decoded = await RPCMessage.decodePeerInfo(encoded)
+//   // console.log(peerInfo1);
+//   // console.log(decoded);
 
 
-  const message = RPCMessage.encodeFindNodeMessage(peerInfo1, 20, [peerInfo2, peerInfo3])
-  console.log(message);
-  const decoded = RPCMessage.decodeFindNodeMessage(message)
-  console.log(decoded);
+//   const requestingPubKey = Buffer.from('hahaha')
+//   const message = Buffer.from('some message')
 
-}
-main()
+//   const toMessage = RPCMessage.encodeHandShakeMessage(peerId1.toB58String(), requestingPubKey, message, peerInfo1)
+//   console.log(toMessage);
+
+
+
+//   const requestingPeerInfo = new PeerInfo(await PeerId.create(), [new Multiaddr('/ip4/0.0.0.0/tcp/4041')])
+//   const fromMessage = RPCMessage.decodeHandShakeMessage(toMessage)
+
+
+// }
+// main()
 
 
 export { RPCMessage, MessageType, FindNodeMessage }

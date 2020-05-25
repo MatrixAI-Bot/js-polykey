@@ -11,12 +11,10 @@ import TransportManager from "./Transport/TransportManager";
 import net from 'net'
 import fs from 'fs'
 import protons = require('protons')
-import { RPCMessage, MessageType } from "./Transport/protos/RPCMessage";
+import { RPCMessage, MessageType } from "./RPC/RPCMessage";
 import { Socket } from "dgram";
 
 class PolykeyNode extends EventEmitter {
-  peerInfo: PeerInfo
-
   dht: KademliaDHT
   peerStore: PeerStore
   transportManager: TransportManager
@@ -26,13 +24,12 @@ class PolykeyNode extends EventEmitter {
 
   constructor(peerId: PeerId) {
     super()
-    this.peerInfo = new PeerInfo(peerId)
-    this.peerStore = new PeerStore()
+    this.peerStore = new PeerStore(new PeerInfo(peerId))
 
     this.transportManager = new TransportManager(this._onTransportConnection.bind(this))
     this.dialer = new Dialer(this.transportManager, this.peerStore)
 
-    this.dht = new KademliaDHT(this.peerInfo.id, this.dialer, this.peerStore)
+    this.dht = new KademliaDHT(this.peerStore.peerInfo, this.dialer, this.peerStore)
 
     // this._onDiscoveryPeer = this._onDiscoveryPeer.bind(this)
     this._isStarted = false
@@ -47,12 +44,20 @@ class PolykeyNode extends EventEmitter {
     conn.on('data', async (data) => {
       if (RPCMessage.messageType(data) === MessageType.FindNode) {
         // Decode message
-        const { requestingPeerId, numClosestPeers, closestPeerIds } = RPCMessage.decodeFindNodeMessage(data)
+        const { requestingPeerInfo, numClosestPeers, closestPeerInfoArray } = RPCMessage.decodeFindNodeMessage(data)
 
         // Go and find closest peers
         console.log('Go and find closest peers');
-        const closestPeers = await this.dht.routingTable.closestPeers(requestingPeerId, numClosestPeers)
-        const responseBuffer = RPCMessage.encodeFindNodeMessage(requestingPeerId, numClosestPeers, closestPeers)
+
+        const closestPeerIds = await this.dht.routingTable.closestPeers(requestingPeerInfo.id, numClosestPeers)
+        const closestPeerInfos: PeerInfo[] =[]
+        for (const peerId of closestPeerIds) {
+          const peerInfo = this.peerStore.get(peerId)
+          if (peerInfo) {
+            closestPeerInfos.push(peerInfo)
+          }
+        }
+        const responseBuffer = RPCMessage.encodeFindNodeMessage(requestingPeerInfo, numClosestPeers, closestPeerInfos)
         console.log(RPCMessage.decodeFindNodeMessage(responseBuffer));
 
         conn.write(responseBuffer, (err) => {
@@ -82,16 +87,16 @@ class PolykeyNode extends EventEmitter {
 
   async _onStarting () {
     // Listen on the addresses supplied in the peerInfo
-    const multiaddrs = Array.from(this.peerInfo.multiaddrs.values())
+    const multiaddrs = Array.from(this.peerStore.peerInfo.multiaddrs.values())
 
     await this.transportManager.listen(multiaddrs)
 
     // The addresses may change once the listener starts
     // eg /ip4/0.0.0.0/tcp/0 => /ip4/192.168.1.0/tcp/58751
-    this.peerInfo.multiaddrs.clear()
+    this.peerStore.peerInfo.multiaddrs.clear()
 
     for (const ma of this.transportManager.getAddrs()) {
-      this.peerInfo.multiaddrs.add(ma)
+      this.peerStore.peerInfo.multiaddrs.add(ma)
     }
 
     // if (this._config.pubsub.enabled) {

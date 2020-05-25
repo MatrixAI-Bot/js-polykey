@@ -1,0 +1,24 @@
+{
+  "nested": {
+    "HandshakeMessage": {
+      "fields": {
+        "requestedPeerIdB58String": {
+          "type": "string",
+          "id": 1
+        },
+        "requestingPubKey": {
+          "type": "bytes",
+          "id": 2
+        },
+        "message": {
+          "type": "bytes",
+          "id": 3
+        },
+        "responsePeerInfo": {
+          "type": "bytes",
+          "id": 4
+        }
+      }
+    }
+  }
+}

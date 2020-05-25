@@ -36,7 +36,7 @@ export default class Polykey {
   private keySize: number
   private metadata: Metadata
   private metadataPath: string
-  km: KeyManager
+  keyManager: KeyManager
 
   _node: any
 
@@ -46,7 +46,7 @@ export default class Polykey {
     keyLen: number | undefined = undefined,
     homeDir: string = os.homedir()
   ) {
-    this.km = km || new KeyManager(this.polykeyPath)
+    this.keyManager = km || new KeyManager(this.polykeyPath)
     homeDir = homeDir || os.homedir()
     this.polykeyDirName = '.polykey'
     this.polykeyPath = Path.join(homeDir, this.polykeyDirName)
@@ -214,7 +214,7 @@ export default class Polykey {
   }
 
   async importKeyPair(privateKeyPath: string, publicKeyPath: string, passphrase: string = '') {
-    await this.km.loadKeyPair(privateKeyPath, publicKeyPath, passphrase)
+    await this.keyManager.loadKeyPair(privateKeyPath, publicKeyPath, passphrase)
     this.metadata.publicKeyPath = publicKeyPath
     this.metadata.privateKeyPath = privateKeyPath
     this.metadata.passphrase = passphrase
@@ -271,7 +271,7 @@ export default class Polykey {
         const privateKeyPath = this.metadata.privateKeyPath
         const passphrase = this.metadata.passphrase
         if (publicKeyPath !== null && privateKeyPath !== null && passphrase !== null) {
-          await this.km.loadKeyPair(
+          await this.keyManager.loadKeyPair(
             privateKeyPath,
             publicKeyPath,
             passphrase
@@ -281,7 +281,7 @@ export default class Polykey {
       // Read in file buffer and signature
       const fileBuffer = Buffer.from(this.fs.readFileSync(filePath, undefined))
       const signatureBuffer = Buffer.from(this.fs.readFileSync(signaturePath, undefined))
-      const verified = await this.km.verifyData(fileBuffer, signatureBuffer, keyBuffer)
+      const verified = await this.keyManager.verifyData(fileBuffer, signatureBuffer, keyBuffer)
       return verified
     } catch (err) {
       throw(err)
@@ -305,7 +305,7 @@ export default class Polykey {
         const privateKeyPath = this.metadata.privateKeyPath
         const passphrase = this.metadata.passphrase
         if (publicKeyPath !== null && privateKeyPath !== null && passphrase !== null) {
-          await this.km.loadKeyPair(
+          await this.keyManager.loadKeyPair(
             privateKeyPath,
             publicKeyPath,
             passphrase
@@ -315,7 +315,7 @@ export default class Polykey {
       // Read file into buffer
       const buffer = Buffer.from(this.fs.readFileSync(path, undefined))
       // Sign the buffer
-      const signedBuffer = await this.km.signData(buffer, keyBuffer, privateKeyPassphrase)
+      const signedBuffer = await this.keyManager.signData(buffer, keyBuffer, privateKeyPassphrase)
       // Write buffer to signed file
       const signedPath = `${path}.sig`
       this.fs.writeFileSync(signedPath, signedBuffer)

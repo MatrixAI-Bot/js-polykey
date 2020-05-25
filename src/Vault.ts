@@ -2,7 +2,7 @@
 import hkdf from 'futoin-hkdf'
 // $FlowFixMe
 import Path from 'path'
-import { EncryptedFS } from 'js-encryptedfs'
+import { EncryptedFS } from 'encryptedfs'
 import { Git } from './version-control/git-server/git'
 import fs from 'fs'
 import * as git from 'isomorphic-git'

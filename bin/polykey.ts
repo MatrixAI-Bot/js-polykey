@@ -35,7 +35,7 @@ function initPolyKey(
         }
         // import keys if provided
         if (publicKeyPath !== undefined) {
-            pk.km.loadPublicKey(publicKeyPath)
+            pk.keyManager.loadPublicKey(publicKeyPath)
             if (verbose) {
                 console.log(chalk.green('public key successfully imported'))
             }
@@ -43,7 +43,7 @@ function initPolyKey(
         if (privateKeyPath !== undefined) {
             if (privatePassphrase !== undefined) {
                 try {
-                    pk.km.loadPrivateKey(privateKeyPath)
+                    pk.keyManager.loadPrivateKey(privateKeyPath)
                     if (verbose) {
                         console.log(chalk.green('private key successfully imported'))
                     }

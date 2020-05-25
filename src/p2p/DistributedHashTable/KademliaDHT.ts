@@ -4,12 +4,12 @@ import PeerId from "peer-id"
 import PeerInfo from "../PeerStore/PeerInfo";
 import RoutingTable from "./RoutingTable";
 import PeerStore from "../PeerStore/PeerStore";
-import {RPCMessage} from "../Transport/protos/RPCMessage";
+import {RPCMessage} from "../RPC/RPCMessage";
 import pEvent from 'p-event'
 
 class KademliaDHT extends EventEmitter {
 
-  peerId: PeerId
+  peerId: PeerInfo
   dialer: Dialer
   routingTable: RoutingTable
   peerStore: PeerStore
@@ -17,7 +17,7 @@ class KademliaDHT extends EventEmitter {
   private running: boolean
 
   constructor(
-    peerId: PeerId,
+    peerId: PeerInfo,
     dialer: Dialer,
     peerStore: PeerStore
   ) {
@@ -25,7 +25,7 @@ class KademliaDHT extends EventEmitter {
 
     this.peerId = peerId
     this.dialer = dialer
-    this.routingTable = new RoutingTable(this.peerId)
+    this.routingTable = new RoutingTable(this.peerId.id)
     this.peerStore = peerStore
     this.running
   }
@@ -119,12 +119,13 @@ class KademliaDHT extends EventEmitter {
 
         const data: Buffer = await pEvent(conn, 'data')
 
-        const { requestingPeerId, numClosestPeers, closestPeerIds } = RPCMessage.decodeFindNodeMessage(data)
+        const { requestingPeerInfo, numClosestPeers, closestPeerInfoArray } = RPCMessage.decodeFindNodeMessage(data)
 
         // Found peers!
         console.log('Found some peers!');
 
         // Add peers to routing table
+        const closestPeerIds = closestPeerInfoArray.map((p) => {return p.id})
         await this.routingTable.addPeers(closestPeerIds)
 
         // Get peer info if peerId exists in closestPeerIds
