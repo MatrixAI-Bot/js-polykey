@@ -1,11 +1,7 @@
 
-import { EventEmitter } from 'events'
 import PeerId = require('peer-id')
-import Multiaddr from 'multiaddr'
-import PeerInfo from '../PeerStore/PeerInfo'
 import PeerStore from '../PeerStore/PeerStore'
-import os from 'os'
-import KeyManager from '../../KeyManager'
+import { KeyManager } from '../../KeyManager'
 import dgram from 'dgram'
 import crypto from 'crypto'
 import { RPCMessage } from '../RPC/RPCMessage'

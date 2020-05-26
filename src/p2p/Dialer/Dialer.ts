@@ -83,10 +83,6 @@ class Dialer {
   async connectToPeer(peer: PeerInfo, options: any = {}): Promise<net.Socket> {
 
     const dialTarget = this._createDialTarget(peer)
-    console.log('peer');
-    console.log(peer);
-
-    console.log(peer);
 
     if (dialTarget.addrs.length === 0) {
       throw(new Error('The dial request has no addresses'))

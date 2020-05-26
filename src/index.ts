@@ -1,1 +1,1 @@
-export { default } from './Polykey.js'
+export { default } from './Polykey'

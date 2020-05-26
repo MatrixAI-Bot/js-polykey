@@ -1,7 +1,7 @@
-const through = require('through');
-const zlib = require('zlib');
-const util = require('util');
-const os = require('os');
+import through from 'through';
+import zlib from 'zlib';
+import util from 'util';
+import os from 'os';
 
 import { spawn } from 'child_process'
 
@@ -146,9 +146,9 @@ export class Service extends HttpDuplex {
                 this.queue(null);
             });
 
-            respStream.log = function() {
-              self.log();
-            };
+            // respStream.log = function() {
+            //   self.log();
+            // };
 
             self.emit('response', respStream, function endResponse() {
                 res.queue(Buffer.from('0000'));
@@ -181,7 +181,7 @@ export class Service extends HttpDuplex {
   }
 
   log() {
-    const _log = util.format(...arguments);
+    const _log = util.format(2, ...arguments);
     const SIDEBAND = String.fromCharCode(2); // PROGRESS
     const message = `${SIDEBAND}${_log}\n`;
     const formattedMessage = Buffer.from(packSideband(message));

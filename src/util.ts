@@ -1,4 +1,5 @@
 import { EncryptedFS } from "encryptedfs";
+import nodeFs from 'fs'
 
 export type KeyPair = {
     private: string,
@@ -77,10 +78,8 @@ export function efsCallbackWrapper(efs: EncryptedFS): GitFS {
       })
     },
     lstat(path, callback) {
-      efs.lstat(path).then((stats) => {
-        callback(null, stats)
-      }).catch((err) => {
-        callback(err, null)
+      nodeFs.lstat(path, (err, stats) => {
+        callback(err, stats)
       })
     },
     readlink(path, options, callback) {

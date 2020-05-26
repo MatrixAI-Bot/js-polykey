@@ -15,12 +15,12 @@ import { efsCallbackWrapper, GitFS } from './util'
 
 export default class Vault {
 
-  _key: Buffer
-  _keyLen: number
-  _name: string
-  _fs: EncryptedFS
-  _secrets: Map<string, any>
-  _vaultPath: string
+  key: Buffer
+  keyLen: number
+  name: string
+  efs: EncryptedFS
+  secrets: Map<string, any>
+  vaultPath: string
   constructor(
     name: string,
     symKey: Buffer,
@@ -28,12 +28,12 @@ export default class Vault {
   ) {
     // how do we create pub/priv key pair?
     // do we use the same gpg pub/priv keypair
-    this._keyLen = 32
-    this._key = this._genSymKey(symKey, this._keyLen)
+    this.keyLen = 32
+    this.key = this._genSymKey(symKey, this.keyLen)
     // Set filesystem
     const vfsInstance = new vfs.VirtualFS
 
-    this._fs = new EncryptedFS(
+    this.efs = new EncryptedFS(
       symKey,
       vfsInstance,
       vfsInstance,
@@ -41,11 +41,11 @@ export default class Vault {
       process
     )
 
-    this._name = name
-    this._vaultPath = Path.join(baseDir, name)
+    this.name = name
+    this.vaultPath = Path.join(baseDir, name)
     // make the vault directory
-    this._fs.mkdirSync(this._vaultPath, {recursive: true})
-    this._secrets = new Map()
+    this.efs.mkdirSync(this.vaultPath, {recursive: true})
+    this.secrets = new Map()
 
     this._loadSecrets()
 
@@ -54,9 +54,9 @@ export default class Vault {
   }
 
   _loadSecrets() {
-    const secrets = this._fs.readdirSync(this._vaultPath, undefined)
+    const secrets = this.efs.readdirSync(this.vaultPath, undefined)
     for (const secret of secrets) {
-      this._secrets.set(secret, null)
+      this.secrets.set(secret, null)
     }
   }
 
@@ -65,30 +65,30 @@ export default class Vault {
   }
 
   _secretExists(secretName: string) : boolean {
-    const secretPath = Path.join(this._vaultPath, secretName)
-    return this._secrets.has(secretName) && this._fs.existsSync(secretPath)
+    const secretPath = Path.join(this.vaultPath, secretName)
+    return this.secrets.has(secretName) && this.efs.existsSync(secretPath)
   }
 
   addSecret (secretName: string, secretBuf: Buffer): void {
     // TODO: check if secret already exists
-    const writePath = Path.join(this._vaultPath, secretName)
+    const writePath = Path.join(this.vaultPath, secretName)
     // TODO: use aysnc methods
-    const fd = this._fs.openSync(writePath, 'w')
-    this._fs.writeSync(fd, secretBuf, 0, secretBuf.length, 0)
-    this._secrets.set(secretName, secretBuf)
+    const fd = this.efs.openSync(writePath, 'w')
+    this.efs.writeSync(fd, secretBuf, 0, secretBuf.length, 0)
+    this.secrets.set(secretName, secretBuf)
     // TODO: close file or use write file sync
   }
 
   getSecret(secretName: string): Buffer | string {
-    if (this._secrets.has(secretName)) {
-      const secret = this._secrets.get(secretName)
+    if (this.secrets.has(secretName)) {
+      const secret = this.secrets.get(secretName)
       if (secret) {
         return secret
       } else {
-        const secretPath = Path.join(this._vaultPath, secretName)
+        const secretPath = Path.join(this.vaultPath, secretName)
         // TODO: this should be async
-        const secretBuf = this._fs.readFileSync(secretPath, {})
-        this._secrets.set(secretName, secretBuf)
+        const secretBuf = this.efs.readFileSync(secretPath, {})
+        this.secrets.set(secretName, secretBuf)
         return secretBuf
       }
     }
@@ -96,8 +96,8 @@ export default class Vault {
   }
 
   removeSecret (secretName: string): void {
-    if (this._secrets.has(secretName)) {
-      const successful = this._secrets.delete(secretName)
+    if (this.secrets.has(secretName)) {
+      const successful = this.secrets.delete(secretName)
       if (successful) {
         return
       }
@@ -107,7 +107,7 @@ export default class Vault {
   }
 
   listSecrets(): string[] {
-    let secrets: string[] = Array.from(this._secrets.keys())
+    let secrets: string[] = Array.from(this.secrets.keys())
     return secrets
   }
 
@@ -225,15 +225,40 @@ export default class Vault {
   // }
 
   async initRepository() {
-    await git.init({fs: efsCallbackWrapper(this._fs), dir: this._vaultPath})
+    const fileSystem = fs
+    // const fileSystem = efsCallbackWrapper(this.efs)
+    await git.init({
+      fs: fileSystem,
+      dir: this.vaultPath
+    })
+    console.log('making first commit');
+    const filePath = Path.join(this.vaultPath, 'somefile')
+    fileSystem.writeFileSync(filePath, 'somefile content')
+
+    await git.add({
+      fs: fileSystem,
+      dir: this.vaultPath,
+      filepath: 'somefile'
+    })
+    // Make first commit
+    await git.commit({
+      fs: fileSystem,
+      dir: this.vaultPath,
+      message: "init commmit",
+      author: {
+        name: this.name
+      }
+    })
+    console.log('done making first commit');
+
   }
 
   shareVault(): string {
     // const vaultParentDir = Path.dirname(this._vaultPath)
 
-    git.init({fs: efsCallbackWrapper(this._fs), dir: Path.join(this._vaultPath, 'gitrepo')})
+    git.init({fs: efsCallbackWrapper(this.efs), dir: Path.join(this.vaultPath, 'gitrepo')})
 
-    const repos = new Git(this._vaultPath, this._fs, {
+    const repos = new Git(this.vaultPath, this.efs, {
       autoCreate: false
     });
     const port = 7005;
@@ -265,17 +290,17 @@ export default class Vault {
 
     await git.addRemote({
       fs,
-      dir: this._vaultPath,
+      dir: this.vaultPath,
       remote: 'master',
-      url: `http://${nodeAddr.address}:${nodeAddr.port}/${this._vaultPath}}`
+      url: `http://${nodeAddr.address}:${nodeAddr.port}/${this.vaultPath}}`
     })
   }
 
   async pullVault() {
     await git.pull({
-      fs: this._fs,
+      fs: this.efs,
       http: http,
-      dir: this._vaultPath,
+      dir: this.vaultPath,
       ref: 'master',
       singleBranch: true
     })

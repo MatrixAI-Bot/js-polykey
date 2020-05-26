@@ -26,20 +26,21 @@ import zxcvbn from 'zxcvbn'
 // symm and asymm. Cryptor can then take these Key classes, which expose the crytpo functions. So even if the
 // crypto library changes, Cryptor doesn't have to cahnge and neither does polykey.
 
+const VAULT_SALT_LEN = 32
 
-export default class KeyManager {
+class KeyManager {
   // TODO: wouldn't keymanager have many sym keys keys to look after?
-  private _keyPair: KeyPair = {private: '', public: '', passphrase: ''}
-  private _identity: Object | undefined = undefined
-  _key!: Buffer
-  _salt!: Buffer
-  private _passphrase!: string
-  private _storePath: string
-  private _fs: typeof fs
+  private keyPair: KeyPair = {private: '', public: '', passphrase: ''}
+  private identity: Object | undefined = undefined
+  key!: Buffer
+  salt!: Buffer
+  private passphrase!: string
+  private storePath: string
+  private fs: typeof fs
   constructor(
     polyKeyPath: string = '~/.polykey/'
   ) {
-    this._storePath = polyKeyPath
+    this.storePath = polyKeyPath
     // Import keypair if it exists
     // Create a vault for key storage
   }
@@ -76,7 +77,7 @@ export default class KeyManager {
       ]
     }
 
-    this._passphrase = passphrase
+    this.passphrase = passphrase
 
     return new Promise<KeyPair>((resolve, reject) => {
       kbpgp.KeyManager.generate(options, (err, identity) => {
@@ -96,9 +97,9 @@ export default class KeyManager {
               }
               // Resolve to parent promise
               const keypair = { private: privKey, public: pubKey, passphrase: passphrase }
-              this._keyPair = keypair
+              this.keyPair = keypair
               // Set the new identity
-              this._identity = identity
+              this.identity = identity
 
               resolve(keypair)
               // TODO: revocation signature?
@@ -111,15 +112,15 @@ export default class KeyManager {
   }
 
   getKeyPair(): KeyPair {
-    return this._keyPair
+    return this.keyPair
   }
 
   getPublicKey(): string {
-    return this._keyPair.public
+    return this.keyPair.public
   }
 
   getPrivateKey(): string {
-    return this._keyPair.private
+    return this.keyPair.private
   }
 
   async loadPrivateKey(privateKey: string | Buffer, passphrase: string = ''): Promise<void> {
@@ -130,10 +131,10 @@ export default class KeyManager {
       } else {
         keyBuffer = privateKey
       }
-      this._keyPair.private = keyBuffer.toString()
+      this.keyPair.private = keyBuffer.toString()
 
       if (passphrase) {
-        this._passphrase = passphrase
+        this.passphrase = passphrase
       }
     } catch (err) {
       throw(err)
@@ -148,7 +149,7 @@ export default class KeyManager {
       } else {
         keyBuffer = publicKey
       }
-      this._keyPair.public = keyBuffer.toString()
+      this.keyPair.public = keyBuffer.toString()
     } catch (err) {
       throw(err)
     }
@@ -179,11 +180,11 @@ export default class KeyManager {
                 reject(err)
               }
 
-              this._identity = identity
+              this.identity = identity
               resolve()
             })
           } else {
-            this._identity = identity
+            this.identity = identity
             resolve()
           }
         })
@@ -197,7 +198,7 @@ export default class KeyManager {
     await this.loadIdentity(passphrase)
 
     if (passphrase) {
-      this._passphrase
+      this.passphrase
     }
   }
 
@@ -210,37 +211,37 @@ export default class KeyManager {
   // }
 
   // symmetric key generation
-  generateKeySync(passphrase: string, salt: Buffer = Buffer.from(crypto.randomBytes(32))): Buffer {
+  generateKeySync(passphrase: string, salt: Buffer = crypto.randomBytes(VAULT_SALT_LEN)): Buffer {
     const [algo, keyLen, numIterations] = ['sha256', 256/8, 10000]
-    this._key = Buffer.from(crypto.pbkdf2Sync(passphrase , salt, numIterations, keyLen, algo))
-    this._salt = salt
+    this.key = crypto.pbkdf2Sync(passphrase , salt, numIterations, keyLen, algo)
+    this.salt = salt
 
-    return this._key
+    return this.key
   }
 
-  async generateKey(passphrase: string, salt: Buffer = Buffer.from(crypto.randomBytes(32))): Promise<Buffer> {
+  async generateKey(passphrase: string, salt: Buffer = crypto.randomBytes(VAULT_SALT_LEN)): Promise<Buffer> {
     const [algo, keyLen, numIterations] = ['sha256', 256/8, 10000]
-    this._key = Buffer.from(await promisify(crypto.pbkdf2)(passphrase , salt, numIterations, keyLen, algo))
-    this._salt = salt
+    this.key = await promisify(crypto.pbkdf2)(passphrase , salt, numIterations, keyLen, algo)
+    this.salt = salt
 
-    return this._key
+    return this.key
   }
 
   importKeySync(keyPath: string): void {
-    this._key = Buffer.from(fs.readFileSync(keyPath))
+    this.key = Buffer.from(fs.readFileSync(keyPath))
   }
 
   async importKey(keyPath: string): Promise<void> {
     try {
-      this._key = Buffer.from(await fs.readFile(keyPath))
+      this.key = Buffer.from(await fs.readFile(keyPath))
     } catch(err) {
       throw Error('Reading key from disk')
     }
   }
 
   async storeProfile(name: string, storeKey: boolean = false): Promise<void> {
-    const profilePath = Path.join(this._storePath, name)
-    if (!this._key && !this._salt) {
+    const profilePath = Path.join(this.storePath, name)
+    if (!this.key && !this.salt) {
       throw Error('There is nothing loaded to store')
     }
     try {
@@ -250,11 +251,11 @@ export default class KeyManager {
       } else {
         await fs.mkdirs(profilePath)
       }
-      if (storeKey && this._key) {
-        await fs.writeFile(Path.join(profilePath, 'key'), this._key)
+      if (storeKey && this.key) {
+        await fs.writeFile(Path.join(profilePath, 'key'), this.key)
       }
-      if (this._salt) {
-        await fs.writeFile(Path.join(profilePath, 'salt'), this._salt)
+      if (this.salt) {
+        await fs.writeFile(Path.join(profilePath, 'salt'), this.salt)
       }
     } catch (err) {
       throw Error('Writing profile')
@@ -262,8 +263,8 @@ export default class KeyManager {
   }
 
   storeProfileSync(name: string, storeKey: boolean = false): void {
-    const profilePath = Path.join(this._storePath, name)
-    if (!this._key && !this._salt) {
+    const profilePath = Path.join(this.storePath, name)
+    if (!this.key && !this.salt) {
       throw Error('There is nothing loaded to warrant storage')
     }
     try {
@@ -273,11 +274,11 @@ export default class KeyManager {
       } else {
         fs.mkdirsSync(profilePath)
       }
-      if (storeKey && this._key) {
-        fs.writeFileSync(Path.join(profilePath, 'key'), this._key)
+      if (storeKey && this.key) {
+        fs.writeFileSync(Path.join(profilePath, 'key'), this.key)
       }
-      if (this._salt) {
-        fs.writeFileSync(Path.join(profilePath, 'salt'), this._key)
+      if (this.salt) {
+        fs.writeFileSync(Path.join(profilePath, 'salt'), this.key)
       }
     } catch (err) {
       throw Error('Writing profile')
@@ -285,37 +286,37 @@ export default class KeyManager {
   }
 
   async loadProfile(name: string, passphrase?: string): Promise<void> {
-    const profilePath = Path.join(this._storePath, name)
+    const profilePath = Path.join(this.storePath, name)
     try {
       if (passphrase) {
-        this._salt = await fs.readFile(Path.join(profilePath, 'salt'))
+        this.salt = await fs.readFile(Path.join(profilePath, 'salt'))
         // TODO: use async version
-        this.generateKeySync(passphrase, this._salt)
+        this.generateKeySync(passphrase, this.salt)
         return
       }
     } catch(err) {
       throw Error('Loading profile salt from disk')
     }
     try {
-      this._key = await fs.readFile(Path.join(profilePath, 'key'))
+      this.key = await fs.readFile(Path.join(profilePath, 'key'))
     } catch (err) {
       throw Error('Loading profile key from disk')
     }
   }
 
   importKeyBuffer(key: Buffer): void {
-    this._key = key
+    this.key = key
   }
 
   async exportKey(path: string, createPath?: boolean): Promise<void> {
-    if (!this._key) {
+    if (!this.key) {
       throw Error('There is no key loaded')
     }
     try {
       if (createPath) {
-        await fs.outputFile(path, this._key)
+        await fs.outputFile(path, this.key)
       } else {
-        await fs.writeFile(path, this._key)
+        await fs.writeFile(path, this.key)
       }
     } catch(err) {
       throw Error('Writing key to disk')
@@ -323,14 +324,14 @@ export default class KeyManager {
   }
 
   exportKeySync(path: string, createPath?: boolean): void {
-    if (!this._key) {
+    if (!this.key) {
       throw Error('There is no key loaded')
     }
     try {
       if (createPath) {
-        fs.outputFileSync(path, this._key)
+        fs.outputFileSync(path, this.key)
       } else {
-        fs.writeFileSync(path, this._key)
+        fs.writeFileSync(path, this.key)
       }
     } catch(err) {
       throw Error('Writing key to disk')
@@ -338,8 +339,8 @@ export default class KeyManager {
   }
 
   async exportProfile(name: string, exportKey: boolean = false): Promise<void> {
-    const profilePath = Path.join(this._storePath, name)
-    if (!this._key && !this._salt) {
+    const profilePath = Path.join(this.storePath, name)
+    if (!this.key && !this.salt) {
       throw Error('There is nothing loaded to store')
     }
     try {
@@ -349,11 +350,11 @@ export default class KeyManager {
       } else {
         await fs.mkdirs(profilePath)
       }
-      if (exportKey && this._key) {
-        await fs.writeFile(Path.join(profilePath, 'key'), this._key)
+      if (exportKey && this.key) {
+        await fs.writeFile(Path.join(profilePath, 'key'), this.key)
       }
-      if (this._salt) {
-        await fs.writeFile(Path.join(profilePath, 'salt'), this._salt)
+      if (this.salt) {
+        await fs.writeFile(Path.join(profilePath, 'salt'), this.salt)
       }
     } catch (err) {
       throw Error('Writing profile')
@@ -361,8 +362,8 @@ export default class KeyManager {
   }
 
   exportProfileSync(name: string, storeKey: boolean = false): void {
-    const profilePath = Path.join(this._storePath, name)
-    if (!this._key && !this._salt) {
+    const profilePath = Path.join(this.storePath, name)
+    if (!this.key && !this.salt) {
       throw Error('There is nothing loaded to warrant storage')
     }
     try {
@@ -372,11 +373,11 @@ export default class KeyManager {
       } else {
         fs.mkdirsSync(profilePath)
       }
-      if (storeKey && this._key) {
-        fs.writeFileSync(Path.join(profilePath, 'key'), this._key)
+      if (storeKey && this.key) {
+        fs.writeFileSync(Path.join(profilePath, 'key'), this.key)
       }
-      if (this._salt) {
-        fs.writeFileSync(Path.join(profilePath, 'salt'), this._key)
+      if (this.salt) {
+        fs.writeFileSync(Path.join(profilePath, 'salt'), this.key)
       }
     } catch (err) {
       throw Error('Writing profile')
@@ -384,19 +385,19 @@ export default class KeyManager {
   }
 
   async importProfile(name: string, passphrase?: string): Promise<void> {
-    const profilePath = Path.join(this._storePath, name)
+    const profilePath = Path.join(this.storePath, name)
     try {
       if (passphrase) {
-        this._salt = Buffer.from(await fs.readFile(Path.join(profilePath, 'salt')))
+        this.salt = Buffer.from(await fs.readFile(Path.join(profilePath, 'salt')))
         // TODO: use async version
-        this.generateKeySync(passphrase, this._salt)
+        this.generateKeySync(passphrase, this.salt)
         return
       }
     } catch(err) {
       throw Error('Loading profile salt from disk')
     }
     try {
-      this._key = Buffer.from(await fs.readFile(Path.join(profilePath, 'key')))
+      this.key = Buffer.from(await fs.readFile(Path.join(profilePath, 'key')))
     } catch (err) {
       throw Error('Loading profile key from disk')
     }
@@ -444,8 +445,8 @@ export default class KeyManager {
           reject(Error('passphrase for private key was not provided'))
         }
         resolvedIdentity = await this.getIdentityFromPrivateKey(withKey, keyPassphrase!)
-      } else if (this._identity !== undefined) {
-        resolvedIdentity = this._identity
+      } else if (this.identity !== undefined) {
+        resolvedIdentity = this.identity
       } else {
         throw(Error('no identity available for signing'))
       }
@@ -469,8 +470,8 @@ export default class KeyManager {
       let resolvedIdentity: Object
       if (withKey !== undefined) {
         resolvedIdentity = await this.getIdentityFromPublicKey(withKey)
-      } else if (this._identity !== undefined) {
-        resolvedIdentity = this._identity
+      } else if (this.identity !== undefined) {
+        resolvedIdentity = this.identity
       } else {
         throw(Error('no identity available for signing'))
       }
@@ -528,8 +529,8 @@ export default class KeyManager {
       let resolvedIdentity: Object
       if (withKey !== undefined) {
         resolvedIdentity = await this.getIdentityFromPublicKey(withKey)
-      } else if (this._identity !== undefined) {
-        resolvedIdentity = this._identity
+      } else if (this.identity !== undefined) {
+        resolvedIdentity = this.identity
       } else {
         throw(Error('no identity available for signing'))
       }
@@ -554,19 +555,19 @@ export default class KeyManager {
   }
 
   getKey(): Buffer {
-    return this._key
+    return this.key
   }
 
   async storePrivateKey(path: string): Promise<void> {
-    await fs.writeFile(path, this._keyPair.private)
+    await fs.writeFile(path, this.keyPair.private)
   }
 
   async storePublicKey(path: string): Promise<void> {
-    await fs.writeFile(path, this._keyPair.public)
+    await fs.writeFile(path, this.keyPair.public)
   }
 
   isLoaded(): boolean {
-    if (this._key) {
+    if (this.key) {
       return true
     }
     return false
@@ -574,3 +575,4 @@ export default class KeyManager {
   // TODO: when storing and loading profiles you should be able to specify a location not just '~/.efs'
 }
 
+export { KeyManager, VAULT_SALT_LEN}

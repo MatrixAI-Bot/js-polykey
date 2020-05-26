@@ -6,6 +6,7 @@ import { spawn } from 'child_process'
 import { HttpDuplex } from './http-duplex'
 import { Service } from './service'
 import { Git } from './git'
+import { uploadPack } from './isogit/upload-pack/uploadPack'
 import fs from 'fs'
 
 export const Util = {
@@ -93,16 +94,16 @@ export const Util = {
       cmd = ['git-' + service, '--stateless-rpc', '--advertise-refs', repoLocation]
     }
 
-    // uploadPack({
-    //   fs: fs,
-    //   dir: repoLocation,
-    //   advertiseRefs: true
-    // }).then((buffer) => {
-    //   console.log('Im here!')
-    //   console.log(buffer?.toString())
-    // }).catch((e) => {
-    //   console.log(e);
-    // })
+    uploadPack({
+      fs: fs,
+      dir: repoLocation,
+      advertiseRefs: true
+    }).then((buffer) => {
+      console.log('Im here!')
+      console.log(buffer?.toString())
+    }).catch((e) => {
+      console.log(e);
+    })
 
 
 

@@ -234,7 +234,6 @@ export class Git extends EventEmitter {
         }
       },
       (req: http.IncomingMessage, res: http.ServerResponse) => {
-        console.log('res2');
         if (req.method !== 'GET') return false
 
         const u = url.parse(req.url!)
