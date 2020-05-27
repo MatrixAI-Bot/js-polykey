@@ -254,30 +254,31 @@ export default class Vault {
   }
 
   shareVault(): string {
-    // const vaultParentDir = Path.dirname(this._vaultPath)
+  //   // const vaultParentDir = Path.dirname(this._vaultPath)
 
-    git.init({fs: efsCallbackWrapper(this.efs), dir: Path.join(this.vaultPath, 'gitrepo')})
+  //   git.init({fs: efsCallbackWrapper(this.efs), dir: Path.join(this.vaultPath, 'gitrepo')})
 
-    const repos = new Git(this.vaultPath, this.efs, {
-      autoCreate: false
-    });
-    const port = 7005;
+  //   const repos = new Git(this.vaultPath, this.efs, {
+  //     autoCreate: false
+  //   });
+  //   const port = 7005;
 
-    repos.on('push', (push) => {
-        console.log(`push ${push.repo}/${push.commit} (${push.branch})`);
-        push.accept();
-    });
+  //   repos.on('push', (push) => {
+  //       console.log(`push ${push.repo}/${push.commit} (${push.branch})`);
+  //       push.accept();
+  //   });
 
-    repos.on('fetch', (fetch) => {
-      console.log(`fetch ${fetch.commit}`);
-      fetch.accept();
-    });
+  //   repos.on('fetch', (fetch) => {
+  //     console.log(`fetch ${fetch.commit}`);
+  //     fetch.accept();
+  //   });
 
-    repos.listen(port, null, () => {
-        console.log(`node-git-server running at http://localhost:${port}`)
-    })
+  //   repos.listen(port, null, () => {
+  //       console.log(`node-git-server running at http://localhost:${port}`)
+  //   })
 
-    return `/ip4/127.0.0.1/tcp/${port}`
+    // return `/ip4/127.0.0.1/tcp/${port}`
+    return `/ip4/127.0.0.1/tcp/7004`
   }
 
   unshareVault(addr: string) {

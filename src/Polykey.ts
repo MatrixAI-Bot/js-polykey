@@ -6,12 +6,13 @@ import crypto from 'crypto'
 import jsonfile from 'jsonfile'
 import { KeyManager } from './KeyManager'
 import GitBackend from './version-control/git-backend/GitBackend'
-import PolykeyNode from './p2p/PolykeyNode'
+// import PolykeyNode from './p2p/PolykeyNode'
 import { promisify } from 'util'
 import PeerId from 'peer-id'
 import Multiaddr from 'multiaddr'
 import EncryptedFS from 'encryptedfs'
 import VaultStore from './VaultStore/VaultStore'
+import { Git } from './version-control/git-server/git'
 
 type Metadata = {
   vaults: {
@@ -44,7 +45,7 @@ export default class Polykey {
   private metadataPath: string
   keyManager: KeyManager
 
-  private polykeyNode: PolykeyNode
+  // private polykeyNode: PolykeyNode
 
   constructor(
     key: Buffer | string,
@@ -79,7 +80,7 @@ export default class Polykey {
       passphrase: null
     }
 
-    this.polykeyNode = new PolykeyNode(peerId)
+    // this.polykeyNode = new PolykeyNode(peerId)
 
     // sync with polykey directory
     this.initSync()
@@ -139,15 +140,15 @@ export default class Polykey {
   // Networking //
   ////////////////
   async start(): Promise<string> {
-    await this.polykeyNode.start()
+    // await this.polykeyNode.start()
     return await this.beginPolyKeyDaemon()
   }
 
-  addMultiaddr(addrs: Multiaddr[]) {
-    for (const addr of addrs) {
-      this.polykeyNode.peerStore.peerInfo.multiaddrs.add(addr)
-    }
-  }
+  // addMultiaddr(addrs: Multiaddr[]) {
+  //   for (const addr of addrs) {
+  //     this.polykeyNode.peerStore.peerInfo.multiaddrs.add(addr)
+  //   }
+  // }
 
   ////////////
   // Vaults //
@@ -342,9 +343,15 @@ export default class Polykey {
 
   // P2P operations
   private async beginPolyKeyDaemon() {
-    const repos = new GitBackend(
+    // const repos = new GitBackend(
+    //   this.polykeyPath,
+    //   this.vaultStore
+    // );
+    const repos = new Git(
       this.polykeyPath,
-      this.vaultStore
+      {
+        autoCreate: true
+      }
     );
     const port = 7004;
 
@@ -358,7 +365,11 @@ export default class Polykey {
       fetch.accept();
     });
 
-    repos.listen(port)
+    // repos.listen(port)
+    repos.listen(port, {}, () => {
+      console.log('listening on port 7004');
+
+    })
 
     return `ip4/127.0.0.1/tcp/${port}`
   }
