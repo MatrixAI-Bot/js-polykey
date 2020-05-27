@@ -12,7 +12,7 @@ const createNode = async (homeDir: string) => {
     peerId
   )
 
-  pk.addMultiaddr([new Multiaddr('/ip4/0.0.0.0/tcp/0')])
+  // pk.addMultiaddr([new Multiaddr('/ip4/0.0.0.0/tcp/0')])
 
   const addr = await pk.start()
   console.log(addr);
@@ -29,3 +29,8 @@ async function main() {
 }
 
 main()
+
+
+
+
+
