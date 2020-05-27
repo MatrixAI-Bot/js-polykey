@@ -7,12 +7,20 @@ import https from 'https'
 import url from 'url'
 import { HttpDuplex } from "./HttpDuplex";
 import { EventEmitter } from "events";
-import { uploadPack } from "../git-server/isogit/upload-pack/uploadPack";
+import { uploadPack } from "./isogit/upload-pack/uploadPack";
 import { spawn } from "child_process";
 import { promisify } from "util";
 import fs from 'fs'
 import VaultStore from "@polykey/VaultStore/VaultStore";
 import { Readable } from "stream";
+
+// Here is the protocol git outlines for sending pack files over http:
+// https://github.com/git/git/blob/master/Documentation/technical/pack-protocol.txt
+// This should be consulted in developing our
+
+// This git backend (as well as HttpDuplex class) is heavily inspired by node-git-server:
+// https://github.com/gabrielcsapo/node-git-server
+
 
 
 const services = ['upload-pack', 'receive-pack']
@@ -53,7 +61,7 @@ class GitBackend extends EventEmitter {
    * @param  {String}   repo - name of the repo
    * @param  {Function=} callback - function to be called when finished
    */
-  async exists(repo: string) {
+  exists(repo: string) {
     // TODO: consider if vault has been shared
     return fs.existsSync(Path.join(this.repoDir, repo))
   }
@@ -131,7 +139,6 @@ class GitBackend extends EventEmitter {
     password: string,
     headers: http.IncomingHttpHeaders
   ) {
-    console.log(type, repo, username, password)
     if(username === 'foo') {
       return
     }
@@ -146,7 +153,8 @@ class GitBackend extends EventEmitter {
    * @param  {Object} res - http response object
    */
   handle(req: http.IncomingMessage, res: http.ServerResponse) {
-    const handler1 = async (req: http.IncomingMessage, res: http.ServerResponse) => {
+
+    const handler1 = (req: http.IncomingMessage, res: http.ServerResponse): boolean => {
       if (req.method !== 'GET') return false
 
       const u = url.parse(req.url!)
@@ -159,47 +167,50 @@ class GitBackend extends EventEmitter {
       if (!params.service) {
         res.statusCode = 400
         res.end('service parameter required')
-        return
+        return true
       }
 
       const service = (<string>params.service).replace(/^git-/, '')
       if (services.indexOf(service) < 0) {
         res.statusCode = 405
         res.end('service not available')
-        return
+        return true
       }
 
       const repoName = this.parseGitName(m[1])
+      const next = (error) => {
+        if (error) {
+          res.setHeader("Content-Type", 'text/plain')
+          res.setHeader("WWW-Authenticate", 'Basic realm="authorization needed"')
+          res.writeHead(401)
+          res.end(typeof error === 'string' ? error : error.toString())
+        } else {
+          this.infoResponse(repo, service, req, res)
+        }
+        return true
+      }
 
-      // // check if the repo is authenticated
-      // if (!req.headers["authorization"]) {
-      //   res.setHeader("Content-Type", 'text/plain')
-      //   res.setHeader("WWW-Authenticate", 'Basic realm="authorization needed"')
-      //   res.writeHead(401)
-      //   res.end('401 Unauthorized')
-      // } else {
-      //   const tokens = req.headers["authorization"].split(" ")
-      //   if (tokens[0] === "Basic") {
-      //     const splitHash = Buffer.from(tokens[1], 'base64').toString('utf8').split(":")
-      //     const username = splitHash.shift() ?? ""
-      //     const password = splitHash.join(":")
-      //     // try to authenticate
-      //     try {
-      //       this.authenticate(this.getType(service), repoName, username, password, req.headers)
-      //     } catch (error) {
-      //       res.setHeader("Content-Type", 'text/plain')
-      //       res.setHeader("WWW-Authenticate", 'Basic realm="authorization needed"')
-      //       res.writeHead(401)
-      //       res.end(typeof error === 'string' ? error : error.toString())
-      //       return
-      //     }
+      // check if the repo is authenticated
+      // if (this.authenticate) {
+      //   const type = this.getType(service)
+      //   const headers = req.headers
+      //   const user = Util.basicAuth.bind(null, req, res)
+      //   const promise = this.authenticate({ type, repo: repoName, user, headers }, (error) => {
+      //     return next(error)
+      //   })
+
+      //   if (promise instanceof Promise) {
+      //     return promise
+      //     .then(next)
+      //     .catch(next)
       //   }
+      // } else {
+        return next(null)
       // }
-
-      return this.infoResponse(repo, service, req, res)
     }
-    const handler2 = async (req: http.IncomingMessage, res: http.ServerResponse) => {
+    const handler2 = (req: http.IncomingMessage, res: http.ServerResponse): boolean => {
       if (req.method !== 'GET') return false
+
 
       const u = url.parse(req.url!)
       const m = u.pathname!.match(/^\/(.+)\/HEAD$/)
@@ -208,12 +219,12 @@ class GitBackend extends EventEmitter {
 
       const repo = m[1]
 
-      const next = async () => {
+      const next = () => {
         const fileSystem = fs
         // const fileSystem = this.vaultStore.get(repo)!.efs
 
         const file = Path.join(this.repoDir, m[1], 'HEAD')
-        const exists = await this.exists(file)
+        const exists = this.exists(file)
         if (exists) {
           fileSystem.createReadStream(file, {}).pipe(res)
         } else {
@@ -222,7 +233,7 @@ class GitBackend extends EventEmitter {
         }
       }
 
-      const exists = await this.exists(repo)
+      const exists = this.exists(repo)
       const anyListeners = this.listeners('head').length > 0
       const dup = new HttpDuplex(req, res)
       // dup.exists = exists
@@ -253,9 +264,9 @@ class GitBackend extends EventEmitter {
         this.emit('head', dup)
         if (!anyListeners) dup.accept()
       }
+      return true
     }
-    const handler3 = (req: http.IncomingMessage, res: http.ServerResponse) => {
-      console.log('res3');
+    const handler3 = (req: http.IncomingMessage, res: http.ServerResponse): boolean => {
       if (req.method !== 'POST') return false
       const m = req.url!.match(/\/(.+)\/git-(.+)/)
       if (!m) return false
@@ -267,7 +278,7 @@ class GitBackend extends EventEmitter {
       if (services.indexOf(service) < 0) {
         res.statusCode = 405
         res.end('service not available')
-        return
+        return true
       }
 
       res.setHeader('content-type', 'application/x-git-' + service + '-result')
@@ -277,23 +288,24 @@ class GitBackend extends EventEmitter {
 
       action.on('header', () => {
         const evName = action.evName
-        const anyListeners = this.listeners(evName).length > 0
         this.emit(evName, action)
-        if (!anyListeners) action.accept()
+        action.accept()
       })
+      return true
     }
-    const handler4 = (req: http.IncomingMessage, res: http.ServerResponse) => {
-      console.log('res4');
+    const handler4 = (req: http.IncomingMessage, res: http.ServerResponse): boolean => {
       if (req.method !== 'GET' && req.method !== 'POST') {
         res.statusCode = 405
         res.end('method not supported')
+        return true
       } else {
         return false
       }
     }
-    const handler5 = (req: http.IncomingMessage, res: http.ServerResponse) => {
+    const handler5 = (req: http.IncomingMessage, res: http.ServerResponse): boolean => {
       res.statusCode = 404
       res.end('not found')
+      return true
     }
 
     const handlers = [
@@ -306,15 +318,25 @@ class GitBackend extends EventEmitter {
 
     res.setHeader('connection', 'close')
 
-    const next = (ix, self) => {
-      const done = () => {
-        next(ix + 1, self)
-      }
-      const x = handlers[ix].call(self, req, res, done)
-      if (x === false) next(ix + 1, self)
-    }
+    for (const handler of handlers) {
+      console.log(handler.name);
 
-    next(0, this)
+      const fulfilled = handler(req,res)
+      if (fulfilled) {
+        console.log(handler.name);
+        break
+      }
+    }
+    // const next = (ix, self) => {
+    //   const done = () => {
+    //     next(ix + 1, self)
+    //   }
+    //   const x: boolean = handlers[ix](self, req, res, done)
+    //   if (x === false) next(ix + 1, self)
+    // }
+
+    // next(0, this)
+    // res.end()
   }
 
   /**
@@ -391,10 +413,10 @@ class GitBackend extends EventEmitter {
    * @param  {http.ServerResponse}  res  - http response
    */
   infoResponse(repo: string, service: string, req: http.IncomingMessage, res: http.ServerResponse) {
-    const repoPath = Path.join(this.repoDir, repo)
 
     const dup = new HttpDuplex(req, res)
-    dup.cwd = repoPath
+
+    dup.cwd = Path.join(this.repoDir, repo)
     dup.repo = repo
 
     dup.accept = dup.emit.bind(dup, 'accept')
@@ -407,6 +429,11 @@ class GitBackend extends EventEmitter {
 
     const anyListeners = this.listeners('info').length > 0
 
+
+    const exists = this.exists(repo)
+
+    // dup.exists = exists
+
     const next = () => {
 
       res.setHeader(
@@ -416,35 +443,33 @@ class GitBackend extends EventEmitter {
       this.noCache(res)
 
       this.serviceRespond(
+        dup,
         service,
-        repo,
-        repoPath,
+        Path.join(this.repoDir, repo),
         res
       )
     }
 
-    this.exists(repo).then((exists) => {
-      // dup.exists = exists
+    if (!exists && this.autoCreate) {
+      dup.once('accept', () => {
+        this.create(repo)
+        next()
+      })
 
-      if (!exists && this.autoCreate) {
-        dup.once('accept', () => {
-          this.create(repo)
-          next()
-        })
+      this.emit('info', dup)
+      if (!anyListeners) dup.accept()
+    } else if (!exists) {
+      res.statusCode = 404
+      res.setHeader('content-type', 'text/plain')
+      res.end('repository not found')
+    } else {
 
-        this.emit('info', dup)
-        if (!anyListeners) dup.accept()
-      } else if (!exists) {
-        res.statusCode = 404
-        res.setHeader('content-type', 'text/plain')
-        res.end('repository not found')
-      } else {
-        dup.once('accept', next)
-        this.emit('info', dup)
+      dup.once('accept', next)
+      this.emit('info', dup)
 
-        if (!anyListeners) dup.accept()
-      }
-    })
+      dup.accept()
+    }
+
 
   }
 
@@ -468,7 +493,7 @@ class GitBackend extends EventEmitter {
    * @param  {String}       repoLocation - the repo path on disk
    * @param  {http.ServerResponse}  res  - http response
    */
-  serviceRespond(service: string, repo: string, repoLocation: string, res: http.ServerResponse) {
+  serviceRespond(dup: HttpDuplex, service: string, repoLocation: string, res: http.ServerResponse) {
 
     const pack = (s) => {
       var n = (4 + s.length).toString(16)
@@ -485,8 +510,6 @@ class GitBackend extends EventEmitter {
     } else {
       cmd = ['git-' + service, '--stateless-rpc', '--advertise-refs', repoLocation]
     }
-
-    console.log(cmd);
 
     const fileSystem = fs
     // const fileSystem = this.vaultStore.get(repo)!.efs
@@ -508,60 +531,30 @@ class GitBackend extends EventEmitter {
 
         yield buffersToWrite[0];
         yield buffersToWrite[1];
+        yield buffersToWrite[2];
       }
 
+      // Pipe the data back into response stream
       const readable = Readable.from(generate());
       readable.pipe(res)
-
-      readable.on('data', (chunk) => {
-        console.log(chunk.toString());
-      });
-
-
-      // if (buffers) {
-      //   for (const buf of buffers) {
-      //     res.write(buf)
-      //   }
-      // }
-      // stream.pipe(res)
-
-      // const next = (ix, next, err) => {
-      //   if (err) {
-      //     console.log("I failed!");
-      //     console.log(err);
-      //   } else {
-      //     console.log("I didn't fail!");
-      //   }
-      //   const buf = buffersToWrite[ix]
-      //   res.write(buf, (err) => {
-      //     if (ix+1 < buffersToWrite.length){
-      //       next(ix+1, next, err)
-      //     } else {
-      //       console.log('Finished!');
-      //     }
-      //   })
-      // }
-      // next(0, next, null)
-
-    }).catch((e) => {
-      console.log(e);
+    }).catch((err) => {
+      dup.emit('error', new Error(`${err.message} running command ${cmd.join(' ')}`))
     })
 
 
-    const ps = spawn(cmd[0], cmd.slice(1))
-
+    // const ps = spawn(cmd[0], cmd.slice(1))
     // ps.on('error', (err) => {
-    //   this.emit('error', new Error(`${err.message} running command ${cmd.join(' ')}`))
+      // dup.emit('error', new Error(`${err.message} running command ${cmd.join(' ')}`))
     // })
     // ps.stdout.pipe(res)
 
-    const readable = Readable.from(ps.stdout);
+    // const readable = Readable.from(ps.stdout);
 
-    readable.on('data', (chunk) => {
-      console.log('ps');
+    // readable.on('data', (chunk) => {
+    //   console.log('ps');
 
-      console.log(chunk.toString());
-    });
+    //   console.log(chunk.toString());
+    // });
   }
 
 
