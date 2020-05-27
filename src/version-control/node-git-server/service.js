@@ -1,11 +1,10 @@
-import through from 'through';
-import zlib from 'zlib';
-import util from 'util';
-import os from 'os';
+const through = require('through');
+const zlib = require('zlib');
+const util = require('util');
+const os = require('os');
+const { spawn } = require('child_process');
 
-import { spawn } from 'child_process'
-
-import { HttpDuplex } from './http-duplex'
+const HttpDuplex = require('./http-duplex');
 
 const headerRE = {
   'receive-pack': '([0-9a-fA-F]+) ([0-9a-fA-F]+) refs\/(heads|tags)\/(.*?)( |00|\u0000)|^(0000)$', // eslint-disable-line
@@ -17,16 +16,7 @@ const packSideband = s => {
   return Array(4 - n.length + 1).join('0') + n + s;
 };
 
-export class Service extends HttpDuplex {
-  status: string;
-  repo: any;
-  service: any;
-  cwd: any;
-  logs: any[];
-  username: string | undefined;
-  last: string;
-  commit: string;
-  evName: string;
+class Service extends HttpDuplex {
   /**
    * Handles invoking the git-*-pack binaries
    * @class Service
@@ -38,8 +28,8 @@ export class Service extends HttpDuplex {
   constructor(opts, req, res) {
     super(req, res);
 
-    let data = '';
-    let self = this;
+    var data = '';
+    var self = this;
 
     this.status = 'pending';
     this.repo = opts.repo;
@@ -78,13 +68,13 @@ export class Service extends HttpDuplex {
 
         var ops = data.match(new RegExp(headerRE[self.service], 'gi'));
         if (!ops) return;
-        data = '';
+        data = undefined;
 
         ops.forEach(function(op) {
-            let type;
-            let m = op.match(new RegExp(headerRE[self.service]));
+            var type;
+            var m = op.match(new RegExp(headerRE[self.service]));
 
-            if (self.service === 'receive-pack' && m !== null) {
+            if (self.service === 'receive-pack') {
                 self.last = m[1];
                 self.commit = m[2];
 
@@ -100,9 +90,10 @@ export class Service extends HttpDuplex {
                     last: self.last,
                     commit: self.commit
                 };
+
                 headers[type] = self[type] = m[4];
                 self.emit('header', headers);
-            } else if (self.service === 'upload-pack' && m !== null) {
+            } else if (self.service === 'upload-pack') {
                 self.commit = m[1];
                 self.evName = 'fetch';
                 self.emit('header', {
@@ -114,6 +105,8 @@ export class Service extends HttpDuplex {
 
     self.once('accept', function onAccept() {
         process.nextTick(function() {
+          console.log('accepted');
+
             const cmd = os.platform() == 'win32' ?
               ['git', opts.service, '--stateless-rpc', opts.cwd]
             :
@@ -146,9 +139,9 @@ export class Service extends HttpDuplex {
                 this.queue(null);
             });
 
-            // respStream.log = function() {
-            //   self.log();
-            // };
+            respStream.log = function() {
+              self.log(...arguments);
+            };
 
             self.emit('response', respStream, function endResponse() {
                 res.queue(Buffer.from('0000'));
@@ -175,13 +168,15 @@ export class Service extends HttpDuplex {
     });
 
     self.once('reject', function onReject(code, msg) {
+      console.log('onReject');
+
         res.statusCode = code;
         res.end(msg);
     });
   }
 
   log() {
-    const _log = util.format(2, ...arguments);
+    const _log = util.format(...arguments);
     const SIDEBAND = String.fromCharCode(2); // PROGRESS
     const message = `${SIDEBAND}${_log}\n`;
     const formattedMessage = Buffer.from(packSideband(message));
@@ -218,3 +213,4 @@ export class Service extends HttpDuplex {
   }
 }
 
+module.exports = Service;
