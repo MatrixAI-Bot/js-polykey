@@ -6,6 +6,8 @@ import { GitPackedRefs } from '../models/GitPackedRefs.js'
 import { GitRefSpecSet } from '../models/GitRefSpecSet.js'
 import { compareRefNames } from '../utils/compareRefNames.js'
 import { join } from '../utils/join.js'
+import nodeFs from 'fs'
+import path from 'path'
 
 import { GitConfigManager } from './GitConfigManager'
 
@@ -21,6 +23,32 @@ const refpaths = ref => [
 
 // @see https://git-scm.com/docs/gitrepository-layout
 const GIT_FILES = ['config', 'description', 'index', 'shallow', 'commondir']
+
+
+// This function is used to get all the files in the refs folder for listRefs function
+function recursiveDirectoryWalk (dir) {
+  return new Promise((resolve, reject) => {
+    var results = [];
+    nodeFs.readdir(dir, async function(err, list) {
+      if (err) return reject(err);
+      var pending = list.length;
+      if (!pending) return resolve(results);
+      list.forEach(async function(file) {
+        file = path.resolve(dir, file);
+        nodeFs.stat(file, async function(err, stat) {
+          if (stat && stat.isDirectory()) {
+            const res = await recursiveDirectoryWalk(file)
+            results = results.concat(res);
+            if (!--pending) resolve(results);
+          } else {
+            results.push(file);
+            if (!--pending) resolve(results);
+          }
+        });
+      });
+    });
+  })
+};
 
 export class GitRefManager {
   static async updateRemoteRefs({
@@ -282,7 +310,8 @@ export class GitRefManager {
     const packedMap = GitRefManager.packedRefs({ fs, gitdir })
     let files = null
     try {
-      files = await fs.readdirDeep(`${gitdir}/${filepath}`)
+      files = await recursiveDirectoryWalk(`${gitdir}/${filepath}`, nodeFs)
+
       files = files.map(x => x.replace(`${gitdir}/${filepath}/`, ''))
     } catch (err) {
       files = []
@@ -301,6 +330,7 @@ export class GitRefManager {
     }
     // since we just appended things onto an array, we need to sort them now
     files.sort(compareRefNames)
+
     return files
   }
 
