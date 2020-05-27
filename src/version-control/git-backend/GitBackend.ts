@@ -15,8 +15,9 @@ import VaultStore from "@polykey/VaultStore/VaultStore";
 import { Readable } from "stream";
 
 // Here is the protocol git outlines for sending pack files over http:
+// https://git-scm.com/docs/pack-protocol/2.17.0
 // https://github.com/git/git/blob/master/Documentation/technical/pack-protocol.txt
-// This should be consulted in developing our
+// This should be consulted in developing our upload pack implementation
 
 // This git backend (as well as HttpDuplex class) is heavily inspired by node-git-server:
 // https://github.com/gabrielcsapo/node-git-server

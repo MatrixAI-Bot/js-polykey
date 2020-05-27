@@ -9,6 +9,8 @@ import git from 'isomorphic-git'
 import { uploadPack } from "./isogit/upload-pack/uploadPack";
 import fs from 'fs'
 import path from "path";
+import { Readable } from "stream";
+import { GitPktLine } from "./isogit/models/GitPktLine";
 
 
 const headerRE = {
@@ -183,22 +185,6 @@ export class HttpDuplex extends EventEmitter {
 
 
 
-    // uploadPack({
-    //   fs: fs,
-    //   dir: cmd[2],
-    //   advertiseRefs: true
-    // }).then((buffers) => {
-    //   console.log('isogit uploadPack');
-    //   if (buffers) {
-    //     for (const buf of buffers) {
-    //       console.log(buf.toString());
-    //     }
-    //   }
-
-
-    // }).catch((e) => {
-    //   console.log(e);
-    // })
 
 
 
@@ -207,17 +193,81 @@ export class HttpDuplex extends EventEmitter {
 
 
 
-    // ps.stdout.on('data', (data: Buffer) => {
-    //   console.log('===========to============');
-    //   console.log('I got data to client');
-    //   console.log(data.toString());
-    // })
+    this.buffered.on('data', async (data) => {
+      console.log('===========from============');
+      console.log('I got data from client');
+      console.log(data.toString());
 
-    // this.buffered.on('data', (data) => {
-    //   console.log('===========from============');
-    //   console.log('I got data from client');
-    //   console.log(data.toString());
-    // })
+      if (data.toString().slice(4, 8) == 'want') {
+        const wantedObjectId = data.toString().slice(9, 49)
+        // console.log('wantedObjectId');
+        // console.log(wantedObjectId);
+
+        const packresult = await git.packObjects({
+          fs: fs,
+          dir: cmd[2],
+          oids: [wantedObjectId]
+        })
+        const packfile = Buffer.from(packresult.packfile!)
+        // Encode file
+        const pktLine: Buffer = GitPktLine.encode(packfile)
+        const flush: Buffer = GitPktLine.flush()
+
+
+        ps.stdout.on('data', (data: Buffer) => {
+          console.log('===========inside============');
+          console.log('I got data to client');
+          console.log('ps data');
+          // byte 135 is where these two diverge, i.e. the pack file
+          // from the command line is not the same as from isogit
+          console.log(data.length);
+          console.log(data.slice(135).toString());
+          console.log('packfile');
+          console.log(packfile.length);
+          console.log(packfile.slice(135).toString());
+        })
+
+        // uploadPack({
+        //   fs: fs,
+        //   dir: cmd[2],
+        //   advertiseRefs: false
+        // }).then(async (buffers) => {
+        //   console.log('isogit uploadPack');
+        //   if (buffers) {
+        //     for (const buf of buffers) {
+        //       console.log(buf.toString());
+        //     }
+        //   }
+
+        //   const buffersToWrite = buffers ?? []
+
+        //   async function * generate() {
+        //     // Hardcoded values
+        //     yield buffersToWrite[0];
+        //     // yield buffersToWrite[1];
+        //     // yield buffersToWrite[2];
+        //     // Pack file line
+        //     yield packfile;
+        //     // Flush line
+        //     yield flush
+        //   }
+
+        //   // Pipe the data back into response stream
+        //   const readable = Readable.from(generate());
+        //   readable.pipe(this.res)
+
+        // }).catch((e) => {
+        //   console.log(e);
+        // })
+      }
+    })
+
+    ps.stdout.on('data', (data: Buffer) => {
+      console.log('===========to============');
+      console.log('I got data to client');
+      console.log(data.toString());
+      console.log('haha');
+    })
 
     this.buffered.pipe(ps.stdin);
     this.buffered.resume();
