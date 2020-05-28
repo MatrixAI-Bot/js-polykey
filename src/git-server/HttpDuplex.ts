@@ -1,19 +1,17 @@
-import { EventEmitter } from "events";
 import http from 'http'
 import through from 'through';
 import zlib from 'zlib';
 import fs from 'fs'
 import { PassThrough } from "stream";
-import { packObjectsWrapper } from "./packObjects/commands/packObjects";
-import { muxJsWrapper } from "./packObjects/models/GitSideBand";
+import { packObjectsWrapper } from "../version-control/git-backend/packObjects/commands/packObjects";
+import { muxJsWrapper } from "../version-control/git-backend/packObjects/models/GitSideBand";
 
 const headerRE = {
   'receive-pack': '([0-9a-fA-F]+) ([0-9a-fA-F]+) refs\/(heads|tags)\/(.*?)( |00|\u0000)|^(0000)$', // eslint-disable-line
   'upload-pack': '^\\S+ ([0-9a-fA-F]+)'
 };
 
-
-class HttpDuplex extends EventEmitter {
+export class HttpDuplex {
   req: http.IncomingMessage
   res: http.ServerResponse
 
@@ -39,8 +37,6 @@ class HttpDuplex extends EventEmitter {
     service?: string,
     cwd?: string
   ) {
-    super()
-
     this.req = req
     this.res = res
 
@@ -81,10 +77,6 @@ class HttpDuplex extends EventEmitter {
       }
 
       this.ts.once('data', this.onData.bind(this))
-
-      this.ts.once('accept', this.onAccept.bind(this))
-
-      this.ts.once('reject', this.onReject.bind(this))
     }
   }
 
@@ -114,57 +106,42 @@ class HttpDuplex extends EventEmitter {
           this.evName = 'tag';
         }
 
-        const headers = {
-          last: this.last,
-          commit: this.commit
-        };
-        headers[type] = this[type] = m[4];
-        this.emit('header', headers);
+        this.accept()
       } else if (this.service === 'upload-pack' && m !== null) {
-        this.commit = m[1];
-        this.evName = 'fetch';
-        this.emit('header', {
-          commit: this.commit
-        });
+
+        this.accept()
       }
     }
   }
 
-  async onAccept() {
+  /**
+   * reject request in flight
+   * @method reject
+   * @memberof Service
+   * @param  {Number} code - http response code
+   * @param  {String} msg  - message that should be displayed on teh client
+   */
+  reject(code: number, msg: string): void {
+    if (this.status !== 'pending') return;
 
-    // const cmd = os.platform() == 'win32' ?
-    //   ['git', this.service, '--stateless-rpc', this.cwd]
-    // :
-    //   ['git-' + this.service, '--stateless-rpc', this.cwd];
+    if (msg === undefined && typeof code === 'string') {
+      msg = code;
+      code = 500;
+    }
+    this.status = 'rejected';
+    this.res.statusCode = code;
+    this.res.end(msg);
+  }
 
-    // const ps = spawn(cmd[0], cmd.slice(1));
+  /**
+   * accepts request to access resource
+   * @method accept
+   * @memberof Service
+   */
+  accept(): void {
+    if (this.status !== 'pending') return;
 
-    // ps.on('error', function(err) {
-    //   this.emit('error', new Error(`${err.message} running command ${cmd.join(' ')}`));
-    // });
-
-    // const respStream = through(function write(c) {
-    //   return this.queue(c);
-    // }, function end() {
-    //   if (this.listeners('response').length > 0) return;
-
-    //   this.queue(null);
-    // });
-
-    // ps.stdout.pipe(respStream).pipe(this.res);
-
-
-
-
-
-
-
-
-
-
-
-
-
+    this.status = 'accepted';
 
 
     this.buffered.on('data', async (data) => {
@@ -185,19 +162,7 @@ class HttpDuplex extends EventEmitter {
           refs: [wantedObjectId],
           depth: undefined
         })
-        // console.log('packResult.shallows');
-        // console.log(packResult.shallows);
-        // console.log('packResult.unshallows');
-        // console.log(packResult.unshallows);
-
-        // packResult.packstream.on('data', (data) => {
-        //   console.log('packstream!');
-        //   console.log(data.toString());
-        // })
         this.res.write(Buffer.from('0008NAK\n'))
-
-        // // This works for cloning straight up:
-        // packResult.packstream.pipe(this.res)
 
         // This is to get the side band stuff working
         const readable = new PassThrough()
@@ -210,55 +175,14 @@ class HttpDuplex extends EventEmitter {
           []
         )
         sideBand.pipe(this.res)
-        sideBand.on('data', (data) => {
-          console.log('sideBand!');
-          console.log(data.toString());
-        })
 
+        // Write progress to the client
         progressStream.write(Buffer.from('0014progress is at 50%\n'))
         progressStream.end()
       }
     })
 
-    // Uncomment this line to use the spawn child process (native git cli)
-    // this.buffered.pipe(ps.stdin);
     this.buffered.resume();
-
-  }
-
-  onReject(code: number, msg: string) {
-    this.res.statusCode = code;
-    this.res.end(msg);
-  }
-
-  /**
-   * reject request in flight
-   * @method reject
-   * @memberof Service
-   * @param  {Number} code - http response code
-   * @param  {String} msg  - message that should be displayed on teh client
-   */
-  reject(code: number, msg: string): void {
-    if (this.status !== 'pending') return;
-
-    if (msg === undefined && typeof code === 'string') {
-      msg = code;
-      code = 500;
-    }
-    this.status = 'rejected';
-    this.ts.emit('reject', code || 500, msg);
-  }
-
-  /**
-   * accepts request to access resource
-   * @method accept
-   * @memberof Service
-   */
-  accept(): void {
-    if (this.status !== 'pending') return;
-
-    this.status = 'accepted';
-    this.ts.emit('accept');
   }
 
   destroy() {
@@ -266,5 +190,3 @@ class HttpDuplex extends EventEmitter {
     this.res.destroy();
   }
 }
-
-// export default HttpDuplex

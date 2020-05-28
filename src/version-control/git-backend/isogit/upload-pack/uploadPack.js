@@ -46,14 +46,6 @@ export async function uploadPack({
         refs,
         symrefs,
       })
-    } else {
-      const responseBuffers = []
-      responseBuffers.push(Buffer.from('0008NAK\n'))
-      // responseBuffers.push(Buffer.from('0029Counting objects: 100% (3/3), done.\n'))
-
-      // responseBuffers.push(Buffer.from('002bTotal 3 (delta 0), reused 0 (delta 0\n'))
-
-      return responseBuffers
     }
   } catch (err) {
     err.caller = 'git.uploadPack'

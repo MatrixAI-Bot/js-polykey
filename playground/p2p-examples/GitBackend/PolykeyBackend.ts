@@ -1,24 +1,14 @@
 const path = require('path');
-import GitBackend from '../../../src/version-control/git-backend/GitBackend'
+import GitServer from '../../../src/git-server/GitServer'
 import VaultStore from '../../../src/VaultStore/VaultStore'
 import git from 'isomorphic-git'
 import fs from 'fs'
 
 const vaultStore = new VaultStore()
 
-const repos = new GitBackend(path.resolve(__dirname, 'tmp'), vaultStore);
+const repos = new GitServer(path.resolve(__dirname, 'tmp'), vaultStore);
 
 const port = 7005;
-
-repos.on('push', (push) => {
-    console.log(`push ${push.repo}/${push.commit} (${push.branch})`);
-    push.accept();
-});
-
-repos.on('fetch', (fetch) => {
-    console.log(`fetch ${fetch.commit}`);
-    fetch.accept();
-});
 
 repos.listen(port);
 
