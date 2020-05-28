@@ -245,7 +245,7 @@ class GitBackend extends EventEmitter {
       dup.reject = dup.emit.bind(dup, 'reject')
 
       dup.once('reject', (code) => {
-        dup.statusCode = code || 500
+        // dup.statusCode = code || 500
         res.end()
       })
 

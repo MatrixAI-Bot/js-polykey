@@ -14,8 +14,8 @@ export async function uploadPack({
       const capabilities = [
         // 'thin-pack',
         // 'side-band',
-        // 'side-band-64k',
-        // 'shallow',
+        'side-band-64k',
+        'shallow',
         // 'deepen-since',
         // 'deepen-not',
         // 'allow-tip-sha1-in-want',
