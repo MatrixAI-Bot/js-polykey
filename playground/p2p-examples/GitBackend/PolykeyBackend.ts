@@ -6,7 +6,7 @@ import fs from 'fs'
 
 const vaultStore = new VaultStore()
 
-const repos = new GitServer(path.resolve(__dirname, 'tmp'), vaultStore);
+const repos = new GitServer(path.resolve(__dirname, 'tmp'), vaultStore, fs);
 
 const port = 7005;
 
