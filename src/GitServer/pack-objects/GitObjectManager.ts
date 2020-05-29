@@ -4,11 +4,12 @@ import fs from 'fs'
 
 import GitObject from './GitObject'
 import { GitPackIndex } from './GitPackIndex'
+import { EncryptedFS } from 'encryptedfs'
 
 const PackfileCache = new Map()
 
 class GitObjectManager {
-  static async read (fileSystem: typeof fs, gitdir: string, oid: string, format = 'content') {
+  static async read(fileSystem: EncryptedFS, gitdir: string, oid: string, format = 'content') {
     // Look for it in the loose object directory.
     let file = fileSystem.readFileSync(`${gitdir}/objects/${oid.slice(0, 2)}/${oid.slice(2)}`)
     let source = `./objects/${oid.slice(0, 2)}/${oid.slice(2)}`

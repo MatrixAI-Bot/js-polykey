@@ -1,7 +1,7 @@
 import GitRefManager from './GitRefManager'
 import { GitPktLine } from './GitPktLine'
 import path from 'path'
-import fs from 'fs'
+import { EncryptedFS } from 'encryptedfs'
 
 async function writeRefsAdResponse({ capabilities, refs, symrefs }) {
   const stream: Buffer[] = []
@@ -24,7 +24,7 @@ async function writeRefsAdResponse({ capabilities, refs, symrefs }) {
 }
 
 async function uploadPack(
-  fileSystem: typeof fs,
+  fileSystem: EncryptedFS,
   dir: string,
   gitdir: string = path.join(dir, '.git'),
   advertiseRefs: boolean = false,
@@ -43,7 +43,7 @@ async function uploadPack(
         // 'allow-reachable-sha1-in-want',
       ]
       let keys = await GitRefManager.listRefs(
-        fs,
+        fileSystem,
         gitdir,
         'refs'
       )
@@ -51,10 +51,13 @@ async function uploadPack(
       const refs = {}
       keys.unshift('HEAD') // HEAD must be the first in the list
       for (const key of keys) {
+        console.log('here at the end of the line');
+        console.log(key);
         refs[key] = await GitRefManager.resolve(fileSystem, gitdir, key)
       }
 
       const symrefs = {}
+
       symrefs['HEAD'] = await GitRefManager.resolve(
         fileSystem,
         gitdir,

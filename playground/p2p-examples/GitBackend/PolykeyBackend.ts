@@ -1,5 +1,5 @@
 const path = require('path');
-import GitServer from '../../../src/git-server/GitServer'
+import GitServer from '../../../src/GitServer/GitServer'
 import VaultStore from '../../../src/VaultStore/VaultStore'
 import git from 'isomorphic-git'
 import fs from 'fs'

@@ -31,14 +31,16 @@ const VAULT_SALT_LEN = 32
 class KeyManager {
   // TODO: wouldn't keymanager have many sym keys keys to look after?
   private keyPair: KeyPair = {private: '', public: '', passphrase: ''}
+  private passphrase!: string
   private identity: Object | undefined = undefined
   key!: Buffer
   salt!: Buffer
-  private passphrase!: string
   private storePath: string
   private fs: typeof fs
   constructor(
-    polyKeyPath: string = '~/.polykey/'
+    polyKeyPath: string = '~/.polykey/',
+    publicKey?: string,
+    privateKey?: string
   ) {
     this.storePath = polyKeyPath
     // Import keypair if it exists

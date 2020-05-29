@@ -1,9 +1,9 @@
 import http from 'http'
 import through from 'through';
 import zlib from 'zlib';
-import fs from 'fs'
 import GitSideBand from "./side-band/GitSideBand";
 import packObjects from './pack-objects/PackObjects';
+import { EncryptedFS } from 'encryptedfs';
 
 const headerRE = {
   'receive-pack': '([0-9a-fA-F]+) ([0-9a-fA-F]+) refs\/(heads|tags)\/(.*?)( |00|\u0000)|^(0000)$', // eslint-disable-line
@@ -27,13 +27,15 @@ export class HttpDuplex {
 
   buffered: through.ThroughStream
   ts: through.ThroughStream
+  efs: EncryptedFS
 
   constructor(
     req: http.IncomingMessage,
     res: http.ServerResponse,
     repo: string,
     service: string,
-    cwd: string
+    cwd: string,
+    efs: EncryptedFS
   ) {
     this.req = req
     this.res = res
@@ -41,6 +43,8 @@ export class HttpDuplex {
     this.repo = repo!
     this.service = service!
     this.cwd = cwd!
+
+    this.efs = efs
 
 
     this.buffered = through().pause();
@@ -145,7 +149,7 @@ export class HttpDuplex {
         const wantedObjectId = data.toString().slice(9, 49)
         const repoDir = this.cwd
         const packResult = await packObjects(
-          fs,
+          this.efs,
           repoDir,
           [wantedObjectId],
           undefined

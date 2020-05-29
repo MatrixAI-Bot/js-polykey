@@ -1,7 +1,8 @@
 // This is a convenience wrapper for reading and writing files in the 'refs' directory.
 import GitPackedRefs from './GitPackedRefs'
-import fs from 'fs'
 import path from 'path'
+import { EncryptedFS } from 'encryptedfs'
+import fs from 'fs'
 
 // @see https://git-scm.com/docs/git-rev-parse.html#_specifying_revisions
 const refpaths = ref => [
@@ -30,16 +31,15 @@ const GIT_FILES = ['config', 'description', 'index', 'shallow', 'commondir']
 
 
 // This function is used to get all the files in the refs folder for listRefs function
-async function recursiveDirectoryWalk(dir: string, fileSystem: typeof fs): Promise<string[]> {
+async function recursiveDirectoryWalk(dir: string, fileSystem: EncryptedFS): Promise<string[]> {
   return new Promise((resolve, reject) => {
     let results: string[] = [];
-    fileSystem.readdir(dir, async function(err, list) {
-      if (err) return reject(err);
+    fileSystem.readdir(dir).then(async (list) => {
       var pending = list.length;
       if (!pending) return resolve(results);
       list.forEach(async function(file) {
         file = path.resolve(dir, file);
-        fileSystem.stat(file, async function(err, stat) {
+        fs.stat(file, async function(err, stat) {
           if (stat && stat.isDirectory()) {
             const res = await recursiveDirectoryWalk(file, fileSystem)
             results = results.concat(res);
@@ -50,19 +50,21 @@ async function recursiveDirectoryWalk(dir: string, fileSystem: typeof fs): Promi
           }
         });
       });
-    });
+    }).catch((err) => {
+      if (err) return reject(err);
+    })
   })
 };
 
 class GitRefManager {
-  static async packedRefs(fileSystem: typeof fs, gitdir: string) {
+  static async packedRefs(fileSystem: EncryptedFS, gitdir: string) {
     const text = fileSystem.readFileSync(`${gitdir}/packed-refs`, { encoding: 'utf8' })
     const packed = GitPackedRefs.from(text)
     return packed.refs
   }
 
   // List all the refs that match the `filepath` prefix
-  static async listRefs(fileSystem: typeof fs, gitdir: string, filepath: string): Promise<string[]> {
+  static async listRefs(fileSystem: EncryptedFS, gitdir: string, filepath: string): Promise<string[]> {
     const packedMap = GitRefManager.packedRefs(fileSystem, gitdir)
     let files: string[] = []
     try {
@@ -89,7 +91,7 @@ class GitRefManager {
 
     return files
   }
-  static async resolve(fileSystem: typeof fs, gitdir: string, ref: string, depth?: number) {
+  static async resolve(fileSystem: EncryptedFS, gitdir: string, ref: string, depth?: number) {
     if (depth !== undefined) {
       depth--
       if (depth === -1) {
@@ -111,7 +113,7 @@ class GitRefManager {
     const allpaths = refpaths(ref).filter(p => !GIT_FILES.includes(p)) // exclude git system files (#709)
 
     for (const ref of allpaths) {
-      const sha = (fileSystem.readFileSync(`${gitdir}/${ref}`, { encoding: 'utf8' })) || packedMap.get(ref)
+      const sha = (fileSystem.readFileSync(`${gitdir}/${ref}`, { encoding: 'utf8' }).toString()) || packedMap.get(ref)
       if (sha) {
         return GitRefManager.resolve(fileSystem, gitdir, sha.trim(), depth)
       }

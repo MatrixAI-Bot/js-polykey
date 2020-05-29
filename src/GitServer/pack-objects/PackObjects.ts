@@ -1,4 +1,3 @@
-import fs from 'fs'
 import pad from 'pad'
 import pako from 'pako'
 import path from 'path'
@@ -8,6 +7,7 @@ import log from './Log'
 import GitObjectManager from './GitObjectManager'
 import GitCommit from './GitCommit'
 import GitTree from './GitTree'
+import { EncryptedFS } from 'encryptedfs'
 
 // import { GitObjectManager } from '../managers/GitObjectManager'
 // import { GitCommit } from '../models/GitCommit'
@@ -34,7 +34,7 @@ type Ack = {
  * @link https://isomorphic-git.github.io/docs/packObjects.html
  */
 async function packObjects (
-  fileSystem: typeof fs,
+  fileSystem: EncryptedFS,
   dir: string,
   refs: string[],
   depth?: number,
@@ -53,7 +53,7 @@ async function packObjects (
   for (const ref of refs) {
     try {
       let commits = await log(
-        fs,
+        fileSystem,
         dir,
         gitdir,
         emitter,
@@ -106,7 +106,7 @@ async function packObjects (
 }
 
 export async function listObjects (
-  fileSystem: typeof fs,
+  fileSystem: EncryptedFS,
   dir: string,
   gitdir: string = path.join(dir, '.git'),
   oids: string[]
@@ -149,7 +149,7 @@ export async function listObjects (
 }
 
 export async function pack (
-  fileSystem: typeof fs,
+  fileSystem: EncryptedFS,
   dir: string,
   gitdir: string = path.join(dir, '.git'),
   oids: string[],

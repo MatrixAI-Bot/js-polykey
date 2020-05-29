@@ -7,9 +7,10 @@ import url from 'url'
 import { HttpDuplex } from "./HttpDuplex";
 import uploadPack from "./upload-pack/UploadPack";
 import { promisify } from "util";
-import fs from 'fs'
 import VaultStore from "@polykey/VaultStore/VaultStore";
 import { Readable } from "stream";
+import fs from 'fs'
+import { AddressInfo } from "net";
 
 // Here is the protocol git outlines for sending pack files over http:
 // https://git-scm.com/docs/pack-protocol/2.17.0
@@ -26,32 +27,29 @@ const services = ['upload-pack', 'receive-pack']
 class GitServer {
   repoDir: string;
   vaultStore: VaultStore;
-  fileSystem: typeof fs
   autoCreate = false
   server: http.Server;
   constructor(
     repoDir: string,
-    vaultStore: VaultStore,
-    fileSystem: typeof fs
+    vaultStore: VaultStore
   ) {
     this.repoDir = repoDir
     this.vaultStore = vaultStore
-    this.fileSystem = fileSystem
   }
 
-  /**
-   * Get a list of all the repositories
-   * @method list
-   * @memberof Git
-   * @param  {Function} callback function to be called when repositories have been found `function(error, repos)`
-   */
-  async list(): Promise<string[]> {
-    return (fs.readdirSync(this.repoDir)).filter((r) =>  {
-      // TODO: Filter just directories
-      // TODO: Filter only the vaults that have been shared
-      return r
-    })
-  }
+  // /**
+  //  * Get a list of all the repositories
+  //  * @method list
+  //  * @memberof Git
+  //  * @param  {Function} callback function to be called when repositories have been found `function(error, repos)`
+  //  */
+  // async list(): Promise<string[]> {
+  //   return (fs.readdirSync(this.repoDir)).filter((r) =>  {
+  //     // TODO: Filter just directories
+  //     // TODO: Filter only the vaults that have been shared
+  //     return r
+  //   })
+  // }
 
   /**
    * Find out whether `repoName` exists in the callback `cb(exists)`.
@@ -65,23 +63,23 @@ class GitServer {
     return fs.existsSync(Path.join(this.repoDir, repo))
   }
 
-  /**
-   * Create a subdirectory `dir` in the repo dir with a callback `cb(err)`.
-   * @method mkdir
-   * @memberof Git
-   * @param  {String}   dir - directory name
-   * @param  {Function=} callback  - callback to be called when finished
-   */
-  mkdir(dir: string) {
-    // TODO: remove sync operations
-    const parts = Path.join(this.repoDir, dir).split(Path.sep)
-    for (let i = 0; i <= parts.length; i++) {
-      const directory = parts.slice(0, i).join(Path.sep)
-      if (directory && !fs.existsSync(directory)) {
-        fs.mkdirSync(directory)
-      }
-    }
-  }
+  // /**
+  //  * Create a subdirectory `dir` in the repo dir with a callback `cb(err)`.
+  //  * @method mkdir
+  //  * @memberof Git
+  //  * @param  {String}   dir - directory name
+  //  * @param  {Function=} callback  - callback to be called when finished
+  //  */
+  // mkdir(dir: string) {
+  //   // TODO: remove sync operations
+  //   const parts = Path.join(this.repoDir, dir).split(Path.sep)
+  //   for (let i = 0; i <= parts.length; i++) {
+  //     const directory = parts.slice(0, i).join(Path.sep)
+  //     if (directory && !fs.existsSync(directory)) {
+  //       fs.mkdirSync(directory)
+  //     }
+  //   }
+  // }
 
   /**
    * returns the typeof service being process
@@ -188,13 +186,19 @@ class GitServer {
       res.setHeader('content-type', 'application/x-git-' + service + '-result')
       this.noCache(res)
 
-      const dup = new HttpDuplex(
-        req,
-        res,
-        repo,
-        service,
-        Path.join(this.repoDir, repo)
-      )
+      const repoDir = Path.join(this.repoDir, repo)
+
+      const fileSystem = this.vaultStore.getVault(repo)?.efs
+      if (fileSystem) {
+        const dup = new HttpDuplex(
+          req,
+          res,
+          repo,
+          service,
+          repoDir,
+          fileSystem
+        )
+      }
 
       return true
     }
@@ -242,7 +246,7 @@ class GitServer {
    * @param  {Function} callback - the function to call when server is started or error has occured
    * @return {Git}  - the Git instance, useful for chaining
    */
-  listen(port: number, type: 'http' | 'https' = 'http'): GitServer {
+  listen(port?: number, type: 'http' | 'https' = 'http'): AddressInfo {
     if (type == 'http') {
       this.server = http.createServer((req, res) => {
         this.handle(req, res)
@@ -253,27 +257,24 @@ class GitServer {
       })
     }
 
-    this.server.listen(port, () => {
-      console.log(`node-git-server running at http://localhost:${port}`)
-    })
-    return this
+    this.server.listen(port)
+
+    return <AddressInfo>this.server.address()
   }
 
   /**
-   * closes the server instance
+   * stops the server instance
    * @method close
    * @memberof Git
    * @param {Promise} - will resolve or reject when the server closes or fails to close.
    */
-  async close() {
+  async stop() {
     try {
       await promisify(this.server.close)()
     } catch (error) {
       throw(error)
     }
   }
-
-
 
 
 
@@ -320,6 +321,7 @@ class GitServer {
 
       this.uploadPackRespond(
         service,
+        repo,
         Path.join(this.repoDir, repo),
         res
       )
@@ -351,34 +353,30 @@ class GitServer {
    * @param  {String}       repoLocation - the repo path on disk
    * @param  {http.ServerResponse}  res  - http response
    */
-  uploadPackRespond(service: string, repoLocation: string, res: http.ServerResponse) {
+  async uploadPackRespond(service: string, repoName: string, repoLocation: string, res: http.ServerResponse) {
     res.write(this.createGitPacketLine('# service=git-' + service + '\n'))
     res.write('0000')
 
-    const fileSystem = fs
-    // const fileSystem = this.vaultStore.get(repo)!.efs
+    const fileSystem = this.vaultStore.getVault(repoName)!.efs
 
-    uploadPack(
+    const buffers = await uploadPack(
       fileSystem,
       repoLocation,
       undefined,
       true
-    ).then((buffers) => {
-      const buffersToWrite = buffers ?? []
+    )
+    const buffersToWrite = buffers ?? []
 
-      async function * generate() {
+    async function * generate() {
 
-        yield buffersToWrite[0];
-        yield buffersToWrite[1];
-        yield buffersToWrite[2];
-      }
+      yield buffersToWrite[0];
+      yield buffersToWrite[1];
+      yield buffersToWrite[2];
+    }
 
-      // Pipe the data back into response stream
-      const readable = Readable.from(generate());
-      readable.pipe(res)
-    }).catch((err) => {
-      throw(new Error(`${err.message} running command ${service}`))
-    })
+    // Pipe the data back into response stream
+    const readable = Readable.from(generate());
+    readable.pipe(res)
   }
 }
 

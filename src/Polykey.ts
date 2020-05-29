@@ -1,18 +1,16 @@
-import fs from 'fs-extra'
+import fs from 'fs'
 import Path from 'path'
 import os from 'os'
 import Vault from './Vault'
 import crypto from 'crypto'
 import jsonfile from 'jsonfile'
 import { KeyManager } from './KeyManager'
-import GitBackend from './version-control/git-backend/GitBackend'
-// import PolykeyNode from './p2p/PolykeyNode'
 import { promisify } from 'util'
 import PeerId from 'peer-id'
-import Multiaddr from 'multiaddr'
-import EncryptedFS from 'encryptedfs'
 import VaultStore from './VaultStore/VaultStore'
-import { Git } from './version-control/git-server/git'
+import GitServer from './GitServer/GitServer'
+import PolykeyNode from './P2P/PolykeyNode'
+
 
 type Metadata = {
   vaults: {
@@ -22,65 +20,55 @@ type Metadata = {
   }
   publicKeyPath: string | null
   privateKeyPath: string | null
-  passphrase: string | null
 }
 
-// TODO: convert sync to promises
-
-/* const prom = {
-  access: util.promisify(fs.access),
-  mkdir: util.promisify(fs.mkdir)
-} */
 const vaultKeySize = 128/8 // in bytes
 // TODO: key typescript public/private variables
 
 export default class Polykey {
+  private publicKey: string
+  private privateKey: string
   private polykeyDirName: string
   polykeyPath: string
   private fs: typeof fs
   private vaultStore: VaultStore
-  private key: Buffer
   private keySize: number
   private metadata: Metadata
   private metadataPath: string
   keyManager: KeyManager
 
-  // private polykeyNode: PolykeyNode
+  private polykeyNode: PolykeyNode
 
   constructor(
-    key: Buffer | string,
+    publicKey: Buffer | string,
+    privateKey: Buffer | string,
     km: KeyManager | undefined = undefined,
     keyLen: number | undefined = undefined,
     homeDir: string = os.homedir(),
     peerId: PeerId
   ) {
-    this.keyManager = km || new KeyManager(this.polykeyPath)
     homeDir = homeDir || os.homedir()
     this.polykeyDirName = '.polykey'
     this.polykeyPath = Path.join(homeDir, this.polykeyDirName)
     this.metadataPath = Path.join(this.polykeyPath, 'metadata')
     // Load keys
-    if (typeof key === 'string') {
-      this.key = this.loadKey(key!)
-    } else {
-      this.key = key
-    }
+    this.publicKey = this.loadKey(publicKey)
+    this.privateKey = this.loadKey(privateKey)
+    // Set keymanager if it hasn't been provided yet
+    this.keyManager = km || new KeyManager(this.polykeyPath, this.publicKey, this.privateKey)
     // Set file system
     this.fs = fs
     // Initialize reamining members
-    // this.vaults = new Map()
     this.vaultStore = new VaultStore()
-
 
     this.keySize = keyLen ?? 32
     this.metadata = {
       vaults: {},
       publicKeyPath: null,
-      privateKeyPath: null,
-      passphrase: null
+      privateKeyPath: null
     }
 
-    // this.polykeyNode = new PolykeyNode(peerId)
+    this.polykeyNode = new PolykeyNode(peerId, this.keyManager)
 
     // sync with polykey directory
     this.initSync()
@@ -140,15 +128,9 @@ export default class Polykey {
   // Networking //
   ////////////////
   async start(): Promise<string> {
-    // await this.polykeyNode.start()
-    return await this.beginPolyKeyDaemon()
+    await this.polykeyNode.start()
+    return await this.startPolykeyDaemon()
   }
-
-  // addMultiaddr(addrs: Multiaddr[]) {
-  //   for (const addr of addrs) {
-  //     this.polykeyNode.peerStore.peerInfo.multiaddrs.add(addr)
-  //   }
-  // }
 
   ////////////
   // Vaults //
@@ -177,7 +159,7 @@ export default class Polykey {
       // TODO: this methods seems a bit magical
       await this.writeMetadata()
       const vault = new Vault(vaultName, vaultKey, this.polykeyPath)
-      this.vaultStore.set(vaultName, vault)
+      this.vaultStore.setVault(vaultName, vault)
       return await this.getVault(vaultName)
     } catch (err) {
       // Delete vault dir and garbage collect
@@ -206,8 +188,8 @@ export default class Polykey {
     }
     // Remaining garbage collection:
     // Remove vault from vaults map
-    if (this.vaultStore.has(vaultName)) {
-      this.vaultStore.delete(vaultName)
+    if (this.vaultStore.hasVault(vaultName)) {
+      this.vaultStore.deleteVault(vaultName)
     }
     // Remove from metadata
     if (this.metadata.vaults.hasOwnProperty(vaultName)) {
@@ -219,7 +201,7 @@ export default class Polykey {
     if (vaultPathExists) {
       throw(Error('Vault path could not be destroyed!'))
     }
-    const vaultEntryExists = this.vaultStore.has(vaultName)
+    const vaultEntryExists = this.vaultStore.hasVault(vaultName)
     if (vaultEntryExists) {
       throw(Error('Vault could not be removed from PolyKey!'))
     }
@@ -233,7 +215,6 @@ export default class Polykey {
     await this.keyManager.loadKeyPair(privateKeyPath, publicKeyPath, passphrase)
     this.metadata.publicKeyPath = publicKeyPath
     this.metadata.privateKeyPath = privateKeyPath
-    this.metadata.passphrase = passphrase
     this.writeMetadata()
   }
 
@@ -270,7 +251,7 @@ export default class Polykey {
     return vault.listSecrets()
   }
 
-  async verifyFile(filePath: string, signaturePath: string, publicKey: string | Buffer | undefined = undefined): Promise<string> {
+  async verifyFile(filePath: string, signaturePath: string, publicKey: string | Buffer | undefined = undefined, passphrase: string): Promise<string> {
     try {
       // Get key if provided
       let keyBuffer: Buffer | undefined
@@ -285,7 +266,6 @@ export default class Polykey {
         // Load keypair into KeyManager from metadata
         const publicKeyPath = this.metadata.publicKeyPath
         const privateKeyPath = this.metadata.privateKeyPath
-        const passphrase = this.metadata.passphrase
         if (publicKeyPath !== null && privateKeyPath !== null && passphrase !== null) {
           await this.keyManager.loadKeyPair(
             privateKeyPath,
@@ -319,12 +299,11 @@ export default class Polykey {
         // Load keypair into KeyManager from metadata
         const publicKeyPath = this.metadata.publicKeyPath
         const privateKeyPath = this.metadata.privateKeyPath
-        const passphrase = this.metadata.passphrase
-        if (publicKeyPath !== null && privateKeyPath !== null && passphrase !== null) {
+        if (publicKeyPath !== null && privateKeyPath !== null) {
           await this.keyManager.loadKeyPair(
             privateKeyPath,
             publicKeyPath,
-            passphrase
+            privateKeyPassphrase
           )
         }
       }
@@ -342,36 +321,19 @@ export default class Polykey {
   }
 
   // P2P operations
-  private async beginPolyKeyDaemon() {
-    // const repos = new GitBackend(
-    //   this.polykeyPath,
-    //   this.vaultStore
-    // );
-    const repos = new Git(
-      this.polykeyPath,
-      {
-        autoCreate: true
-      }
+  private async startPolykeyDaemon() {
+    const repos = new GitServer(
+      Path.resolve(this.polykeyPath),
+      this.vaultStore
     );
-    const port = 7004;
 
-    repos.on('push', (push) => {
-        console.log(`push ${push.repo}/${push.commit} (${push.branch})`);
-        push.accept();
-    });
+    const addressInfo = repos.listen(7005)
 
-    repos.on('fetch', (fetch) => {
-      console.log(`fetch ${fetch.commit}`);
-      fetch.accept();
-    });
+    const addressString = `http://localhost:${addressInfo.port}`
 
-    // repos.listen(port)
-    repos.listen(port, {}, () => {
-      console.log('listening on port 7004');
+    console.log(`Encrypted Vaults now listening on port: ${addressInfo.port}`);
 
-    })
-
-    return `ip4/127.0.0.1/tcp/${port}`
+    return addressString
   }
 
   tagVault() {
@@ -382,18 +344,22 @@ export default class Polykey {
 
   }
 
-  shareVault(vaultName: string): string {
-    // Get vault
-    const vault = this.vaultStore.get(vaultName)
-    if (vault) {
-      return vault.shareVault()
-    } else {
-      throw(Error('Vault does not exist'))
+  async shareVault(vaultName: string, pubKey: string) {
+    try {
+      const peerId = await PeerId.createFromPubKey(pubKey)
+      this.vaultStore.shareVault(vaultName, peerId)
+    } catch (err) {
+      throw(err)
     }
   }
 
-  unshareVault() {
-
+  async unshareVault(vaultName: string, pubKey: string) {
+    try {
+      const peerId = await PeerId.createFromPubKey(pubKey)
+      this.vaultStore.unshareVault(vaultName, peerId)
+    } catch (err) {
+      throw(err)
+    }
   }
 
   async pullVault(addr: string, vaultName: string) {
@@ -423,8 +389,8 @@ export default class Polykey {
   }
 
   private async getVault(vaultName: string): Promise<Vault> {
-    if (this.vaultStore.has(vaultName)) {
-      const vault = this.vaultStore.get(vaultName)
+    if (this.vaultStore.hasVault(vaultName)) {
+      const vault = this.vaultStore.getVault(vaultName)
       if (vault) {
         return vault
       }
@@ -437,13 +403,12 @@ export default class Polykey {
     }
     const vaultKey = this.metadata.vaults[vaultName].key
     const vault = new Vault(vaultName, vaultKey, this.polykeyPath)
-    this.vaultStore.set(vaultName, vault)
+    this.vaultStore.setVault(vaultName, vault)
     return vault
   }
 
   initSync(): void {
-    // check if .polykey exists
-    //  make folder if doesn't
+    // check if polykey path exists and make it if it doesn't
       console.log(this.polykeyPath);
     if (!this.fs.existsSync(this.polykeyPath)) {
       this.fs.mkdirSync(this.polykeyPath, {recursive: true})
@@ -467,7 +432,7 @@ export default class Polykey {
           try {
             const vaultKey = Buffer.from(this.metadata.vaults[vaultName].key)
             const vault = new Vault(vaultName, vaultKey, this.polykeyPath)
-            this.vaultStore.set(vaultName, vault)
+            this.vaultStore.setVault(vaultName, vault)
           } catch (err) {
             throw(err);
             throw(Error(`Failed to initialize vault '${vaultName}: ${err.message}'`));
@@ -478,11 +443,11 @@ export default class Polykey {
   }
 
   // TODO: we don't even open the file here
-  private loadKey(path: string | Buffer, keySize: number = this.keySize): Buffer {
+  private loadKey(path: string | Buffer, keySize: number = this.keySize): string {
     if (path instanceof Buffer) {
-      return path
+      return path.toString()
     }
     const keyBuf = Buffer.from(this.fs.readFileSync(path, undefined))
-    return keyBuf
+    return keyBuf.toString()
   }
 }

@@ -1,12 +1,12 @@
-import fs from 'fs'
 import path = require("path")
 import GitRefManager from '../upload-pack/GitRefManager'
 import GitCommit from './GitCommit'
 import GitObjectManager from './GitObjectManager'
+import { EncryptedFS } from 'encryptedfs'
 
 
 
-export async function logCommit (fileSystem: typeof fs, gitdir: string, oid: string, signing: boolean) {
+export async function logCommit (fileSystem: EncryptedFS, gitdir: string, oid: string, signing: boolean) {
   try {
     let { type, object } = await GitObjectManager.read(fileSystem, gitdir, oid)
     if (type !== 'commit') {
@@ -37,7 +37,7 @@ function compareAge (a, b) {
  * @link https://isomorphic-git.github.io/docs/log.html
  */
 async function log (
-  fileSystem: typeof fs,
+  fileSystem: EncryptedFS,
   dir,
   gitdir = path.join(dir, '.git'),
   ref = 'HEAD',
