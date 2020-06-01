@@ -1,17 +1,13 @@
-import PeerId from "peer-id"
 import PeerStore from "./PeerStore/PeerStore"
 // import KademliaDHT from "./DistributedHashTable/KademliaDHT";
 import PeerInfo from "./PeerStore/PeerInfo";
 import Multiaddr from "multiaddr";
-import DialRequest from "./Dialer/DialRequest";
-import Dialer, { Dialable } from "./Dialer/Dialer";
+// import DialRequest from "./Dialer/DialRequest";
+// import Dialer, { Dialable } from "./Dialer/Dialer";
 import { TCP } from "./Transport/TCP";
 import { EventEmitter } from "events";
 import TransportManager from "./Transport/TransportManager";
 import net from 'net'
-import fs from 'fs'
-import protons = require('protons')
-import { Socket } from "dgram";
 import MulticastPeerDiscovery from "./PeerDiscovery/MulticastPeerDiscovery";
 import { KeyManager } from "@polykey/KeyManager";
 
@@ -19,21 +15,21 @@ class PolykeyNode extends EventEmitter {
   // dht: KademliaDHT
   peerStore: PeerStore
   transportManager: TransportManager
-  dialer: Dialer
+  // dialer: Dialer
 
   multicastPeerDiscovery: MulticastPeerDiscovery
 
   isStarted: boolean
 
   constructor(
-    peerId: PeerId,
+    pubKey: string,
     keyManager: KeyManager
   ) {
     super()
-    this.peerStore = new PeerStore(new PeerInfo(peerId))
+    this.peerStore = new PeerStore(new PeerInfo(pubKey))
 
     this.transportManager = new TransportManager(this._onTransportConnection.bind(this))
-    this.dialer = new Dialer(this.transportManager, this.peerStore)
+    // this.dialer = new Dialer(this.transportManager, this.peerStore)
 
     this.multicastPeerDiscovery = new MulticastPeerDiscovery(this.peerStore, keyManager)
 
@@ -107,6 +103,9 @@ class PolykeyNode extends EventEmitter {
       this.peerStore.peerInfo.multiaddrs.add(ma)
     }
 
+    // Begin multicasting
+    await this.multicastPeerDiscovery.start()
+
     // if (this._config.pubsub.enabled) {
     //   this.pubsub && this.pubsub.start()
     // }
@@ -169,7 +168,10 @@ class PolykeyNode extends EventEmitter {
 
       await this.transportManager.close()
 
-      this.dialer.destroy()
+      // Stop multicasting
+      await this.multicastPeerDiscovery.stop()
+
+      // this.dialer.destroy()
     } catch (err) {
       if (err) {
         this.emit('error', err)
@@ -179,47 +181,47 @@ class PolykeyNode extends EventEmitter {
     console.log('polykey node has stopped')
   }
 
-  async dialPeer(peerId: PeerId): Promise<net.Socket> {
+  // async dialPeer(peerId: PeerId): Promise<net.Socket> {
 
-    const peerInfo = this.peerStore.get(peerId)
-    if (!peerInfo) {
-      throw(new Error('peer does not exist in peer store'))
-    }
+  //   const peerInfo = this.peerStore.get(peerId)
+  //   if (!peerInfo) {
+  //     throw(new Error('peer does not exist in peer store'))
+  //   }
 
-    const conn = await this.dialer.connectToPeer(peerInfo)
+  //   const conn = await this.dialer.connectToPeer(peerInfo)
 
-    return conn
-  }
+  //   return conn
+  // }
 
-  async dial(peer: PeerInfo): Promise<net.Socket> {
-    const socket = await this.dialProtocol(peer)
-    return socket
-  }
+  // async dial(peer: PeerInfo): Promise<net.Socket> {
+  //   const socket = await this.dialProtocol(peer)
+  //   return socket
+  // }
 
-  /**
-   * Dials to the provided peer and handshakes with the given protocol.
-   * If successful, the `PeerInfo` of the peer will be added to the nodes `peerStore`,
-   * and the `Connection` will be sent in the callback
-   *
-   * @async
-   * @param {PeerInfo|PeerId|Multiaddr|string} peer The peer to dial
-   * @param {string[]|string} protocols
-   * @param {object} options
-   * @param {AbortSignal} [options.signal]
-   * @returns {Promise<Connection|*>}
-   */
-  async dialProtocol (peer: Dialable, options?: any): Promise<net.Socket> {
-    const dialable = Dialer.getDialable(peer)
-    let connection: net.Socket
-    if (dialable instanceof PeerInfo) {
-      this.addPeer(dialable)
-      connection = await this.dialer.connectToPeer(dialable, options)
-    } else {
-      connection = await this.transportManager.dial(dialable, options)
-    }
+  // /**
+  //  * Dials to the provided peer and handshakes with the given protocol.
+  //  * If successful, the `PeerInfo` of the peer will be added to the nodes `peerStore`,
+  //  * and the `Connection` will be sent in the callback
+  //  *
+  //  * @async
+  //  * @param {PeerInfo|PeerId|Multiaddr|string} peer The peer to dial
+  //  * @param {string[]|string} protocols
+  //  * @param {object} options
+  //  * @param {AbortSignal} [options.signal]
+  //  * @returns {Promise<Connection|*>}
+  //  */
+  // async dialProtocol (peer: Dialable, options?: any): Promise<net.Socket> {
+  //   const dialable = Dialer.getDialable(peer)
+  //   let connection: net.Socket
+  //   if (dialable instanceof PeerInfo) {
+  //     this.addPeer(dialable)
+  //     connection = await this.dialer.connectToPeer(dialable, options)
+  //   } else {
+  //     connection = await this.transportManager.dial(dialable, options)
+  //   }
 
-    return connection
-  }
+  //   return connection
+  // }
 
   private addPeer(peerInfo: PeerInfo) {
     this.peerStore.add(peerInfo)

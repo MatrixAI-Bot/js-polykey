@@ -1,10 +1,10 @@
 
-import PeerId = require('peer-id')
 import PeerStore from '../PeerStore/PeerStore'
 import { KeyManager } from '../../KeyManager'
 import dgram from 'dgram'
 import crypto from 'crypto'
 import { RPCMessage } from '../RPC/RPCMessage'
+import { EventEmitter } from 'events'
 
 // This peer discovery module uses the following lib:
 // https://github.com/mafintosh/multicast-dns and is also
@@ -24,13 +24,13 @@ const UDP_MULTICAST_PORT = 5353;
 const UDP_MULTICAST_ADDR = "224.0.0.251";
 
 type PeerMessage = {
-  localPubKey: Buffer
-  peerPubKey: Buffer
-  raw: Buffer
-  encrypted: Buffer
+  encryptedLocalPubKey: Buffer
+  encryptedPeerPubKey: Buffer
+  rawRandomMessage: Buffer
+  encryptedRandomMessage: Buffer
 }
 
-class MulticastPeerDiscovery {
+class MulticastPeerDiscovery extends EventEmitter {
   peerStore: PeerStore
   keyManager: KeyManager
 
@@ -44,6 +44,8 @@ class MulticastPeerDiscovery {
     peerStore: PeerStore,
     keyManager: KeyManager
   ) {
+    super()
+
     this.peerStore = peerStore
     this.keyManager = keyManager
 
@@ -54,19 +56,17 @@ class MulticastPeerDiscovery {
 
   queryLAN() {
     const query = () => {
-      console.log('Begin query round');
-      console.log('===================================');
-      for (const peerId of this.peerPubKeyMessages.keys()) {
-        const peerMessage = this.peerPubKeyMessages.get(peerId)
+      for (const pubKey of this.peerPubKeyMessages.keys()) {
+        const peerMessage = this.peerPubKeyMessages.get(pubKey)
         if (peerMessage) {
           const handshakeMessage = RPCMessage.encodeHandShakeMessage(
-            peerId,
-            peerMessage.localPubKey,
-            peerMessage.encrypted
+            peerMessage.encryptedPeerPubKey,
+            peerMessage.encryptedLocalPubKey,
+            peerMessage.encryptedRandomMessage
           )
 
           this.socket.send(handshakeMessage, 0, handshakeMessage.length, UDP_MULTICAST_PORT, UDP_MULTICAST_ADDR, () => {
-            console.info(`Sending message to peerId: ${peerId}`);
+            console.info(`Sending message to peer`);
           });
         }
 
@@ -112,29 +112,34 @@ class MulticastPeerDiscovery {
       const decodedMessage = RPCMessage.decodeHandShakeMessage(message)
       console.info(`Message from: ${rinfo.address}:${rinfo.port}`);
 
+
       // Try to decrypt message and pubKey
-      const myPeerId = this.peerStore.peerInfo.id.toB58String()
-      if (decodedMessage.requestedPeerIdB58String == myPeerId) {
-        console.log(`I am peerId: ${myPeerId} and am requesting node`);
+      const decryptedMessage = await this.keyManager.decryptData(decodedMessage.message.toString())
+      const decryptedTargetPubKey = await this.keyManager.decryptData(decodedMessage.targetPubKey.toString())
+      const decryptedRequestingPubKey = await this.keyManager.decryptData(decodedMessage.requestingPubKey.toString())
+
+      const myPubKey = this.keyManager.getPublicKey()
+      if (decodedMessage.requestingPubKey.toString() == myPubKey) {
+        console.log(`I am requesting node`);
       } else {
-        console.log(`I am peerId: ${myPeerId} and am receiving node`);
+        console.log(`I am receiving node`);
       }
 
-      const decryptedMessage = await this.keyManager.decryptData(decodedMessage.message.toString())
-      const decryptedPubKey = await this.keyManager.decryptData(decodedMessage.requestingPubKey.toString())
-
-      if (decryptedPubKey.toString() == this.keyManager.getPublicKey()) { // Response
+      if (decryptedRequestingPubKey.toString() == myPubKey) { // Response
         // Make sure decrypted bytes equal raw bytes in memory
-        const originalMessage = this.peerPubKeyMessages.get(decodedMessage.requestedPeerIdB58String)?.raw
+
+        const originalMessage = this.peerPubKeyMessages.get(decryptedTargetPubKey.toString())?.rawRandomMessage
+
         if (decryptedMessage.toString() == originalMessage?.toString()) {  // Validated!
           // Add peer info to peerStore
           const newPeerInfo = decodedMessage.responsePeerInfo
           if (newPeerInfo) {
             this.peerStore.add(newPeerInfo)
             // Remove peerId from requested messages
-            const peerIdB58String = newPeerInfo.id.toB58String()
-            this.peerPubKeyMessages.delete(peerIdB58String)
-            console.log(`New peer added to the store: ${peerIdB58String}`);
+            const pubKey = newPeerInfo.publicKey
+            this.peerPubKeyMessages.delete(pubKey)
+            console.log(`New peer added to the store`);
+            this.emit('found', newPeerInfo)
           } else {
             console.log("I got a validated response. But no peerInfo");
           }
@@ -142,40 +147,43 @@ class MulticastPeerDiscovery {
         } else {  // Not validated, might be a bad actor trying to spoof the call
           console.log("I got a non-validated response");
         }
-      } else {
+      } else {  // Requests on target node
         // Try decrypting message
         // Re-encrypt the data and send it on its way
-        const encryptedMessage = await this.keyManager.encryptData(decryptedMessage, decryptedPubKey)
-        const encryptedPubKey = await this.keyManager.encryptData(decryptedPubKey, decryptedPubKey)
+
+        const encryptedTargetPubKey = await this.keyManager.encryptData(Buffer.from(myPubKey), decryptedRequestingPubKey)
+        const encryptedMessage = await this.keyManager.encryptData(decryptedMessage, decryptedRequestingPubKey)
+        const encryptedPubKey = await this.keyManager.encryptData(decryptedRequestingPubKey, decryptedRequestingPubKey)
         const handshakeMessage = RPCMessage.encodeHandShakeMessage(
-          this.peerStore.peerInfo.id.toB58String(),
+          Buffer.from(encryptedTargetPubKey),
           Buffer.from(encryptedPubKey),
           Buffer.from(encryptedMessage),
           this.peerStore.peerInfo
         )
         this.socket.send(handshakeMessage, 0, handshakeMessage.length, UDP_MULTICAST_PORT, UDP_MULTICAST_ADDR, () => {
-          console.info(`Sending response from peerId: "${this.peerStore.peerInfo.id.toB58String()}"`);
+          console.info(`Sending response`);
         });
       }
 
     } catch (err) {
       console.log('Couldnt decode message!');
-      // throw(err)
     }
   }
 
-  requestPeerContact(pubKey: Buffer, destinationPeerId: PeerId) {
+  async requestPeerContact(pubKey: string) {
+    const pubKeyBuf = Buffer.from(pubKey)
     const randomMessage = crypto.randomBytes(16)
     // Encrypt message
-    this.keyManager.encryptData(randomMessage, pubKey).then(async (encrypted) => {
-      const encryptedPubKey = await this.keyManager.encryptData(Buffer.from(this.keyManager.getPublicKey()), pubKey)
-      // Add to peer messages to be sent over multicast
-      this.peerPubKeyMessages.set(destinationPeerId.toB58String(), {
-        localPubKey: Buffer.from(encryptedPubKey),
-        peerPubKey: pubKey,
-        raw: randomMessage,
-        encrypted: Buffer.from(encrypted)
-      })
+    const encryptedPeerPubKey = await this.keyManager.encryptData(pubKeyBuf, pubKeyBuf)
+    const encryptedRandomMessage = await this.keyManager.encryptData(randomMessage, pubKeyBuf)
+    const encryptedLocalPubKey = await this.keyManager.encryptData(Buffer.from(this.keyManager.getPublicKey()), pubKeyBuf)
+
+    // Add to peer messages to be sent over multicast
+    this.peerPubKeyMessages.set(pubKey, {
+      encryptedLocalPubKey: Buffer.from(encryptedLocalPubKey),
+      encryptedPeerPubKey: Buffer.from(encryptedPeerPubKey),
+      rawRandomMessage: randomMessage,
+      encryptedRandomMessage: Buffer.from(encryptedRandomMessage)
     })
   }
 

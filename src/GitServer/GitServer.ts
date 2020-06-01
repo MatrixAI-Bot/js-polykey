@@ -60,6 +60,11 @@ class GitServer {
    */
   exists(repo: string) {
     // TODO: consider if vault has been shared
+
+    console.log(Path.join(this.repoDir, repo));
+    console.log(fs.existsSync(Path.join(this.repoDir, repo)));
+
+
     return fs.existsSync(Path.join(this.repoDir, repo))
   }
 
@@ -123,12 +128,17 @@ class GitServer {
   handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
     const infoHandler = (req: http.IncomingMessage, res: http.ServerResponse): boolean => {
+
       if (req.method !== 'GET') return false
 
       const u = url.parse(req.url!)
       const m = u.pathname!.match(/\/(.+)\/info\/refs$/)
+      console.log('heyyyy');
+      console.log(u);
+      console.log(m);
       if (!m) return false
       if (/\.\./.test(m[1])) return false
+
 
       const repo = m[1]
       const params = parse(u.query!)
@@ -307,6 +317,9 @@ class GitServer {
   infoResponse(repo: string, service: string, req: http.IncomingMessage, res: http.ServerResponse) {
 
     const exists = this.exists(repo)
+    console.log(repo);
+    console.log(exists);
+
 
     if (!exists) {
       res.statusCode = 404

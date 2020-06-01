@@ -2,8 +2,8 @@
   "nested": {
     "HandshakeMessage": {
       "fields": {
-        "requestedPeerIdB58String": {
-          "type": "string",
+        "targetPubKey": {
+          "type": "bytes",
           "id": 1
         },
         "requestingPubKey": {

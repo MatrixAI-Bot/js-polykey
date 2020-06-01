@@ -2,7 +2,7 @@
   "nested": {
     "PeerInfo": {
       "fields": {
-        "id": {
+        "pubKey": {
           "type": "string",
           "id": 1
         },

@@ -1,9 +1,8 @@
-import Vault from "@polykey/Vault";
-import PeerId = require("peer-id");
+import Vault from "./Vault";
 
 class VaultStore {
   private vaults:Map<string, Vault>
-  private vaultShareMap:Map<string, Set<PeerId>>
+  private vaultShareMap:Map<string, Set<string>>
   constructor() {
     this.vaults = new Map()
     this.vaultShareMap = new Map()
@@ -20,29 +19,30 @@ class VaultStore {
     return this.vaults.has(name)
   }
   public deleteVault(name: string): boolean {
-    return this.vaults.delete(name)
+
+    return this.vaults.delete(name) && this.vaultShareMap.delete(name)
   }
   public getVaultNames(): string[] {
     return Array.from(this.vaults.keys())
   }
 
   // Here is where we keep track of vault sharing
-  public shareVault(name: string, peerId: PeerId) {
+  public shareVault(name: string, publicKey: string) {
     if (!this.hasVault(name)) {
       throw(new Error('Vault does not exist in store'))
     }
     const sharingPeers = this.vaultShareMap.get(name) ?? new Set()
-    this.vaultShareMap.set(name, sharingPeers.add(peerId))
+    this.vaultShareMap.set(name, sharingPeers.add(publicKey))
   }
 
   // Here is where we keep track of vault sharing
-  public unshareVault(name: string, peerId: PeerId) {
+  public unshareVault(name: string, publicKey: string) {
     if (!this.hasVault(name)) {
       throw(new Error('Vault does not exist in store'))
     }
     const sharingPeers = this.vaultShareMap.get(name) ?? new Set()
 
-    if (!sharingPeers.delete(peerId)) {
+    if (!sharingPeers.delete(publicKey)) {
       throw(new Error('Vault could not be unshared from user.'))
     }
     this.vaultShareMap.set(name, sharingPeers)

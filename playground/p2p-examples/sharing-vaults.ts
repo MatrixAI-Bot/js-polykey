@@ -3,7 +3,6 @@ import PeerId from 'peer-id'
 import { KeyManager } from '../../src/KeyManager'
 
 const createNode = async (homeDir: string) => {
-  const peerId = await PeerId.create()
   const keyManager = new KeyManager(homeDir)
   // Generate a new identity
   const keyPair = await keyManager.generateKeyPair(
@@ -17,8 +16,7 @@ const createNode = async (homeDir: string) => {
     Buffer.from(keyPair.private),
     keyManager,
     undefined,
-    homeDir,
-    peerId
+    homeDir
   )
 
   const addr = await pk.start()
@@ -28,11 +26,26 @@ const createNode = async (homeDir: string) => {
 }
 
 async function main() {
+  console.log('============== Create PK1 ==============');
   const pk1 = await createNode('./tmp/Polykey1')
-  // const pk2 = await createNode('./tmp/Polykey2')
+  console.log('============== Create PK1 ==============');
+  const pk2 = await createNode('./tmp/Polykey2')
 
-  const pk1Vault = await pk1.createVault('Pk1Vault')
-  // pk1.shareVault(pk1Vault.name)
+  // Create secure vault in pk1
+  // first remove if exists
+  pk1.destroyVault('SecureVault')
+  const secureVault = await pk1.createVault('SecureVault')
+  secureVault.addSecret('SomeSecret', Buffer.from('this is really secret'))
+
+  // Clone into pk2
+  // First have to 'discover' pk1
+  await pk2.findPeer(pk1.polykeyNode.peerStore.peerInfo.publicKey)
+  pk2.cloneVault(pk1.polykeyNode.peerStore.peerInfo.publicKey, secureVault.name)
+
+  // Add another secret to pk1 vault and then pull from pk2
+  secureVault.addSecret('someothersecret', Buffer.from('very secret'))
+  await pk2.pullVault(pk1.polykeyNode.peerStore.peerInfo.publicKey, secureVault.name)
+
 }
 
 main()

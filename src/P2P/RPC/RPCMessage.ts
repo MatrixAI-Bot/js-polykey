@@ -1,5 +1,4 @@
 import { Root, Type } from "protobufjs"; // respectively "./node_modules/protobufjs"
-import PeerId = require("peer-id");
 import Multiaddr from "multiaddr";
 import PeerInfo from "../PeerStore/PeerInfo";
 
@@ -15,7 +14,7 @@ type FindNodeMessage = {
   closestPeerInfoArray: PeerInfo[]
 }
 type HandshakeMessage = {
-  requestedPeerIdB58String: string
+  targetPubKey: Buffer
   requestingPubKey: Buffer
   message: Buffer
   responsePeerInfo?: PeerInfo
@@ -114,7 +113,7 @@ class RPCMessage {
 
     // Exemplary payload
     const payload = {
-      id: peerInfo.id.toB58String(),
+      pubKey: peerInfo.publicKey,
       multiaddrs: multiaddrs,
       protocols: Array.from(peerInfo.protocols),
       connectedMultiaddr: peerInfo.connectedMultiaddr?.buffer
@@ -163,7 +162,7 @@ class RPCMessage {
     }
 
     const peerInfo = new PeerInfo(
-      PeerId.createFromB58String(object.id),
+      object.pubKey,
       multiaddrs
     )
 
@@ -172,7 +171,7 @@ class RPCMessage {
     return peerInfo
   }
 
-  static encodeHandShakeMessage(requestedPeerIdB58String: string, requestingPubKey: Buffer, messageBuf: Buffer, responsePeerInfo?: PeerInfo): Uint8Array {
+  static encodeHandShakeMessage(targetPubKey: Buffer, requestingPubKey: Buffer, messageBuf: Buffer, responsePeerInfo?: PeerInfo): Uint8Array {
     const jsonDescriptor = require('./HandshakeMessage.json')
 
     const root = Root.fromJSON(jsonDescriptor);
@@ -183,7 +182,7 @@ class RPCMessage {
 
     // Exemplary payload
     const payload = {
-      requestedPeerIdB58String: requestedPeerIdB58String,
+      targetPubKey: targetPubKey,
       requestingPubKey: requestingPubKey,
       message: messageBuf,
       responsePeerInfo: responsePeerInfoBuf
@@ -225,6 +224,7 @@ class RPCMessage {
       oneofs: true    // includes virtual oneof fields set to the present field's name
     });
 
+    const targetPubKey: Buffer = Buffer.from(object.targetPubKey, 'base64')
     const requestingPubKey: Buffer = Buffer.from(object.requestingPubKey, 'base64')
     const messageBuf: Buffer = Buffer.from(object.message, 'base64')
     let responsePeerInfo: PeerInfo | undefined = undefined
@@ -233,7 +233,7 @@ class RPCMessage {
     }
 
     return {
-      requestedPeerIdB58String: object.requestedPeerIdB58String,
+      targetPubKey: targetPubKey,
       requestingPubKey: requestingPubKey,
       message: messageBuf,
       responsePeerInfo: responsePeerInfo

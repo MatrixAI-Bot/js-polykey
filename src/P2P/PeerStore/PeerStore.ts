@@ -1,5 +1,4 @@
 import { EventEmitter } from 'events'
-import PeerId from 'peer-id'
 import Multiaddr from 'multiaddr'
 import PeerInfo from './PeerInfo'
 
@@ -11,7 +10,7 @@ import PeerInfo from './PeerInfo'
  */
 class PeerStore extends EventEmitter {
   peerInfo: PeerInfo
-  peers: Map<PeerId, PeerInfo>
+  peers: Map<string, PeerInfo>
   constructor(peerInfo: PeerInfo) {
     super()
 
@@ -33,7 +32,7 @@ class PeerStore extends EventEmitter {
   put(peerInfo: PeerInfo, silent: boolean = false): PeerInfo {
     let peer: PeerInfo
     // Already know the peer?
-    if (this.has(peerInfo.id)) {
+    if (this.has(peerInfo.publicKey)) {
       peer = this.update(peerInfo)
     } else {
       peer = this.add(peerInfo)
@@ -51,7 +50,7 @@ class PeerStore extends EventEmitter {
    */
   add(peerInfo: PeerInfo): PeerInfo {
     // Create new instance and add values to it
-    const newPeerInfo = new PeerInfo(peerInfo.id)
+    const newPeerInfo = new PeerInfo(peerInfo.publicKey)
 
     peerInfo.multiaddrs.forEach((ma) => newPeerInfo.multiaddrs.add(ma))
     peerInfo.protocols.forEach((p) => newPeerInfo.protocols.add(p))
@@ -78,7 +77,7 @@ class PeerStore extends EventEmitter {
       }
     })
 
-    this.peers.set(peerInfo.id, peerProxy)
+    this.peers.set(peerInfo.publicKey, peerProxy)
     return peerProxy
   }
 
@@ -88,7 +87,7 @@ class PeerStore extends EventEmitter {
    * @return {PeerInfo}
    */
   update(peerInfo: PeerInfo): PeerInfo {
-    const recorded = this.peers.get(peerInfo.id)
+    const recorded = this.peers.get(peerInfo.publicKey)
     if (!recorded) {
       return peerInfo
     }
@@ -136,8 +135,8 @@ class PeerStore extends EventEmitter {
     }
 
     // Add the public key if missing
-    if (!recorded.id.pubKey && peerInfo.id.pubKey) {
-      recorded.id.pubKey = peerInfo.id.pubKey
+    if (!recorded.publicKey && peerInfo.publicKey) {
+      recorded.publicKey = peerInfo.publicKey
     }
 
     return recorded
@@ -145,20 +144,20 @@ class PeerStore extends EventEmitter {
 
   /**
    * Get the info to the given id.
-   * @param {PeerId|string} peerId b58str id
+   * @param {PeerId|string} pubKey b58str id
    * @returns {PeerInfo}
    */
-  get(peerId: PeerId): PeerInfo | null {
-    return this.peers.get(peerId) ?? null
+  get(pubKey: string): PeerInfo | null {
+    return this.peers.get(pubKey) ?? null
   }
 
   /**
    * Has the info to the given id.
-   * @param {PeerId|string} peerId b58str id
+   * @param {PeerId|string} pubKey b58str id
    * @returns {boolean}
    */
-  has(peerId: PeerId): boolean {
-    return this.peers.has(peerId)
+  has(pubKey: string): boolean {
+    return this.peers.has(pubKey)
   }
 
   /**
@@ -167,27 +166,13 @@ class PeerStore extends EventEmitter {
    * @returns {void}
    */
   replace(peerInfo: PeerInfo): void {
-    this.peers.delete(peerInfo.id)
+    this.peers.delete(peerInfo.publicKey)
     this.add(peerInfo)
 
     // This should be cleaned up in PeerStore v2
     this.emit('change:multiaddrs', {
       peerInfo,
       multiaddrs: peerInfo.multiaddrs
-    })
-  }
-
-  /**
-   * Returns the known multiaddrs for a given `PeerInfo`. All returned multiaddrs
-   * will include the encapsulated `PeerId` of the peer.
-   * @param {PeerInfo} peer
-   * @returns {Array<Multiaddr>}
-   */
-  multiaddrsForPeer(peer: PeerInfo): Multiaddr[] {
-    return Array.from(this.put(peer, true).multiaddrs).map(addr => {
-      const idString = addr.getPeerId()
-      if (idString && idString === peer.id.toB58String()) return addr
-      return addr.encapsulate(`/p2p/${peer.id.toB58String()}`)
     })
   }
 }

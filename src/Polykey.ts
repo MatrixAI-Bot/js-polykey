@@ -1,15 +1,19 @@
 import fs from 'fs'
-import Path from 'path'
 import os from 'os'
-import Vault from './Vault'
+import Path from 'path'
 import crypto from 'crypto'
 import jsonfile from 'jsonfile'
-import { KeyManager } from './KeyManager'
 import { promisify } from 'util'
-import PeerId from 'peer-id'
-import VaultStore from './VaultStore/VaultStore'
-import GitServer from './GitServer/GitServer'
+import git from 'isomorphic-git'
+import Vault from './VaultStore/Vault'
+import { KeyManager } from './KeyManager'
+import http from 'isomorphic-git/http/node'
 import PolykeyNode from './P2P/PolykeyNode'
+import { efsCallbackWrapper } from './util'
+import GitServer from './GitServer/GitServer'
+import VaultStore from './VaultStore/VaultStore'
+import PeerInfo from './P2P/PeerStore/PeerInfo'
+import Multiaddr from 'multiaddr'
 
 
 type Metadata = {
@@ -37,19 +41,18 @@ export default class Polykey {
   private metadataPath: string
   keyManager: KeyManager
 
-  private polykeyNode: PolykeyNode
+  polykeyNode: PolykeyNode
 
   constructor(
     publicKey: Buffer | string,
     privateKey: Buffer | string,
     km: KeyManager | undefined = undefined,
     keyLen: number | undefined = undefined,
-    homeDir: string = os.homedir(),
-    peerId: PeerId
+    homeDir: string = os.homedir()
   ) {
     homeDir = homeDir || os.homedir()
-    this.polykeyDirName = '.polykey'
-    this.polykeyPath = Path.join(homeDir, this.polykeyDirName)
+    this.polykeyDirName = homeDir
+    this.polykeyPath = Path.join(homeDir, '.polykey')
     this.metadataPath = Path.join(this.polykeyPath, 'metadata')
     // Load keys
     this.publicKey = this.loadKey(publicKey)
@@ -68,7 +71,7 @@ export default class Polykey {
       privateKeyPath: null
     }
 
-    this.polykeyNode = new PolykeyNode(peerId, this.keyManager)
+    this.polykeyNode = new PolykeyNode(this.publicKey, this.keyManager)
 
     // sync with polykey directory
     this.initSync()
@@ -136,7 +139,7 @@ export default class Polykey {
   // Vaults //
   ////////////
   async createVault(vaultName: string): Promise<Vault> {
-    const path = Path.join(this.polykeyPath, vaultName)
+    const path = Path.join(this.polykeyDirName, vaultName)
     let vaultExists: boolean
     try {
       vaultExists = (await promisify(this.fs.exists)(path))
@@ -158,7 +161,7 @@ export default class Polykey {
       this.metadata.vaults[vaultName] = { key: vaultKey, tags: []}
       // TODO: this methods seems a bit magical
       await this.writeMetadata()
-      const vault = new Vault(vaultName, vaultKey, this.polykeyPath)
+      const vault = new Vault(vaultName, vaultKey, this.polykeyDirName)
       this.vaultStore.setVault(vaultName, vault)
       return await this.getVault(vaultName)
     } catch (err) {
@@ -166,6 +169,21 @@ export default class Polykey {
       await this.destroyVault(vaultName)
       throw err
     }
+  }
+
+  async findPeer(pubKey: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.polykeyNode.multicastPeerDiscovery.requestPeerContact(pubKey)
+      this.polykeyNode.multicastPeerDiscovery.on('found', (peerInfo: PeerInfo) => {
+        if (peerInfo.publicKey == pubKey) {
+          console.log('hehehe');
+
+          resolve()
+        } else {
+          reject(Error('Pubkey was not the same'))
+        }
+      })
+    })
   }
 
   async vaultExists(vaultName: string): Promise<boolean> {
@@ -181,7 +199,7 @@ export default class Polykey {
     // and triggering garbage collection
     // destruction is a better word as we should ensure all traces is removed
 
-    const path = Path.join(this.polykeyPath, vaultName)
+    const path = Path.join(this.polykeyDirName, vaultName)
     // Remove directory on file system
     if (this.fs.existsSync(path)) {
       this.fs.rmdirSync(path, {recursive: true})
@@ -322,12 +340,20 @@ export default class Polykey {
 
   // P2P operations
   private async startPolykeyDaemon() {
+    console.log(Path.resolve(this.polykeyDirName));
+
     const repos = new GitServer(
-      Path.resolve(this.polykeyPath),
+      Path.resolve(this.polykeyDirName),
       this.vaultStore
     );
 
-    const addressInfo = repos.listen(7005)
+    const addressInfo = repos.listen()
+
+    // Add to peerInfo
+    const maString = `/ip4/127.0.0.1/tcp/${addressInfo.port}`
+    console.log(maString);
+
+    this.polykeyNode.peerStore.peerInfo.multiaddrs.add(new Multiaddr(maString))
 
     const addressString = `http://localhost:${addressInfo.port}`
 
@@ -344,10 +370,18 @@ export default class Polykey {
 
   }
 
+  private peerExists(peer: PeerInfo | string): boolean {
+    const pubKey = (peer instanceof PeerInfo) ? peer.publicKey : peer
+    return this.polykeyNode.peerStore.has(pubKey)
+  }
+
   async shareVault(vaultName: string, pubKey: string) {
+    // Confirm peer exists in our store
+    if (!this.peerExists(pubKey)) {
+      throw(new Error('Peer does not exists in peer store'))
+    }
     try {
-      const peerId = await PeerId.createFromPubKey(pubKey)
-      this.vaultStore.shareVault(vaultName, peerId)
+      this.vaultStore.shareVault(vaultName, pubKey)
     } catch (err) {
       throw(err)
     }
@@ -355,27 +389,69 @@ export default class Polykey {
 
   async unshareVault(vaultName: string, pubKey: string) {
     try {
-      const peerId = await PeerId.createFromPubKey(pubKey)
-      this.vaultStore.unshareVault(vaultName, peerId)
+      this.vaultStore.unshareVault(vaultName, pubKey)
     } catch (err) {
       throw(err)
     }
   }
 
-  async pullVault(addr: string, vaultName: string) {
-    // Create vault first if it doesn't exist
-    let vault: Vault
-    if (!(await this.vaultExists(vaultName))) {
-      vault = await this.createVault(vaultName)
-    } else {
-      vault = await this.getVault(vaultName)
+  async cloneVault(peerPubKey: string, vaultName: string) {
+    // Check if peer exists
+    const peerInfo = this.polykeyNode.peerStore.get(peerPubKey)
+    if (!peerInfo) {
+      throw(new Error('Peer does not exist in peer store'))
     }
 
-    // Add new peer
-    vault.addPeer(addr)
+    // Get peer address from peerinfo in peer store
+    const multiaddr: Multiaddr = peerInfo.multiaddrs.values().next().value
 
-    // Make vault pull from peer vault
-    await vault.pullVault()
+    if (!multiaddr) {
+      throw(new Error('Peer does not have a connected address'))
+    }
+    const addr = multiaddr.nodeAddress()
+
+    // Create a new vault
+    const vault = await this.createVault(vaultName)
+
+    // Clone from remote peer
+    await git.clone({
+      fs: efsCallbackWrapper(vault.efs),
+      http: http,
+      dir: vault.vaultPath,
+      url: `http://${addr.address}:${addr.port}/${vault.name}`,
+      singleBranch: true
+    })
+
+    // Add peerId to shared peers
+    this.vaultStore.shareVault(vault.name, peerPubKey)
+  }
+
+  async pullVault(peerPubKey: string, vaultName: string) {
+    // Check if peer exists
+    const peerInfo = this.polykeyNode.peerStore.get(peerPubKey)
+    if (!peerInfo) {
+      throw(new Error('Peer does not exist in peer store'))
+    }
+
+    // Get peer address from peerinfo in peer store
+    const multiaddr: Multiaddr = peerInfo.multiaddrs.values().next().value
+
+    if (!multiaddr) {
+      throw(new Error('Peer does not have a connected address'))
+    }
+    const addr = multiaddr.nodeAddress()
+
+    // Get a new vault
+    const vault = await this.getVault(vaultName)
+
+    // Clone from remote peer
+    await git.pull({
+      fs: efsCallbackWrapper(vault.efs),
+      http: http,
+      dir: vault.vaultPath,
+      url: `http://${addr.address}:${addr.port}/${vault.name}`,
+      singleBranch: true
+    })
   }
 
 

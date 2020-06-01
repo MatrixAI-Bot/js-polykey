@@ -1,13 +1,12 @@
-import PeerId from "peer-id";
 import Multiaddr from "multiaddr";
 
 class PeerInfo {
-  id: PeerId
+  publicKey: string
   multiaddrs: Set<Multiaddr>
   protocols: Set<string>
   connectedMultiaddr: Multiaddr | null
-  constructor(id: PeerId, multiaddrs?: Multiaddr[]) {
-    this.id = id
+  constructor(pubKey: string, multiaddrs?: Multiaddr[]) {
+    this.publicKey = pubKey
     this.multiaddrs = new Set(multiaddrs)
     this.protocols = new Set()
   }
