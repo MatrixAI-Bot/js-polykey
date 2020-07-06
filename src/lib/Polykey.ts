@@ -1,9 +1,9 @@
-import os from 'os'
-import GitBackend from '@polykey/git/GitBackend'
-import KeyManager from '@polykey/keys/KeyManager'
-import PeerManager from '@polykey/peers/PeerManager'
-import VaultManager from '@polykey/vaults/VaultManager'
-import PublicKeyInfrastructure from './pki/PublicKeyInfrastructure'
+import os from 'os';
+import grpc from 'grpc';
+import GitBackend from '@polykey/git/GitBackend';
+import KeyManager from '@polykey/keys/KeyManager';
+import PeerManager from '@polykey/peers/PeerManager';
+import VaultManager from '@polykey/vaults/VaultManager';
 
 class Polykey {
   polykeyPath: string
@@ -17,7 +17,8 @@ class Polykey {
     keyManager?: KeyManager,
     vaultManager?: VaultManager,
     peerManager?: PeerManager,
-    pki?: PublicKeyInfrastructure
+    rootCerts?: Buffer,
+    keyCertPairs: grpc.KeyCertPair[] = []
   ) {
     this.polykeyPath = polykeyPath
 
@@ -32,7 +33,10 @@ class Polykey {
       this.polykeyPath,
       this.keyManager,
       new GitBackend(this.polykeyPath, this.vaultManager),
-      pki ?? new PublicKeyInfrastructure()
+      undefined,
+      undefined,
+      rootCerts,
+      keyCertPairs
     )
   }
 }

@@ -1,6 +1,5 @@
 import grpc from 'grpc';
-import { Address } from '@polykey/peers/PeerInfo';
-import createX509Certificate from '@polykey/pki/PublicKeyInfrastructure';
+import { Address } from '../peers/PeerInfo';
 
 class GitClient {
   private client: any

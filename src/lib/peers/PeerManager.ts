@@ -1,16 +1,14 @@
-import os from 'os'
-import fs from 'fs'
-import grpc from 'grpc'
-import Path from 'path'
-import KeyManager from "@polykey/keys/KeyManager";
-import PeerInfo, { Address } from "@polykey/peers/PeerInfo";
-import { firstPromiseFulfilled } from '@polykey/utils';
-import MulticastBroadcaster from "@polykey/peers/MulticastBroadcaster";
-import RPCMessage from '@polykey/rpc/RPCMessage';
-import createX509Certificate from '@polykey/pki/PublicKeyInfrastructure'
+import os from 'os';
+import fs from 'fs';
+import grpc from 'grpc';
+import Path from 'path';
 import GitClient from '@polykey/git/GitClient';
 import GitBackend from '@polykey/git/GitBackend';
-import PublicKeyInfrastructure from '@polykey/pki/PublicKeyInfrastructure';
+import RPCMessage from '@polykey/rpc/RPCMessage';
+import KeyManager from "@polykey/keys/KeyManager";
+import { firstPromiseFulfilled } from '@polykey/utils';
+import PeerInfo, { Address } from "@polykey/peers/PeerInfo";
+import MulticastBroadcaster from "@polykey/peers/MulticastBroadcaster";
 
 interface SocialDiscovery {
   // Must return a public pgp key
@@ -61,9 +59,11 @@ class PeerManager {
     polykeyPath: string = `${os.homedir()}/.polykey`,
     keyManager: KeyManager,
     gitBackend: GitBackend,
-    pki: PublicKeyInfrastructure,
     peerInfo?: PeerInfo,
     socialDiscoveryServices: SocialDiscovery[] = [],
+    rootCerts?: Buffer,
+    keyCertPairs: grpc.KeyCertPair[] = []
+
   ) {
     fs.mkdirSync(polykeyPath, {recursive: true})
     this.metadataPath = Path.join(polykeyPath, '.peerMetadata')
@@ -97,9 +97,7 @@ class PeerManager {
     /////////////////
     // GRPC Server //
     /////////////////
-
     this.server = new grpc.Server();
-
 
     const protoLoader = require('@grpc/proto-loader')
     const PROTO_PATH = __dirname + '/../../proto/git_server.proto';
@@ -132,14 +130,15 @@ class PeerManager {
     });
 
     // Bind server and set address
-    this.credentials = grpc.ServerCredentials.createSsl(
-      pki.caPrivateKey!,
-      [{
-        private_key: pki.key,
-        cert_chain: pki.cert
-      }],
-      false,
-    )
+    if (rootCerts && keyCertPairs.length != 0) {
+      this.credentials = grpc.ServerCredentials.createSsl(
+        rootCerts,
+        keyCertPairs,
+        false
+      )
+    } else {
+      this.credentials = grpc.ServerCredentials.createInsecure()
+    }
     const port = this.server.bind('0.0.0.0:0', this.credentials);
     const address = new Address('127.0.0.1', port.toString())
     this.server.start();

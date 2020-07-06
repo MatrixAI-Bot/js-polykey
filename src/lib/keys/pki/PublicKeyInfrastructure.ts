@@ -1,31 +1,16 @@
 import {pki} from 'node-forge'
 
 class PublicKeyInfrastructure {
-  caPrivateKey: Buffer | undefined
-  caCert: Buffer | undefined
+  static N_BITS: number = 2048
+  static COMMON_NAME: string = 'polykey'
+  static ORGANIZATION_NAME: string = 'MatrixAI'
 
-  caStore: pki.CAStore
-
-  cert: Buffer
-  key: Buffer
-
-  constructor(
-    caPrivateKey?: Buffer,
-    caCert?: Buffer
-  ) {
-    this.caPrivateKey = caPrivateKey
-    this.caCert = caCert
-
-    this.caStore = pki.createCaStore()
-    // if (caPrivateKey) {
-    //   this.caStore.addCertificate(pki.certificateFromPem(caPrivateKey.toString()))
-    // }
-
-    this.createX509Certificate()
-  }
-
-  private createX509Certificate(nbits: number = 2048, organizationName: string = 'MatrixAI') {
-
+  /**
+   * Creates an X.509 certificate for transport layer security
+   * @param nbits The number of bits for keypair generation
+   * @param organizationName The name of the organization
+   */
+  static createX509Certificate(nbits: number = this.N_BITS, commonName: string = this.COMMON_NAME, organizationName: string = this.ORGANIZATION_NAME) {
     // generate a keypair and create an X.509v3 certificate
     const keys = pki.rsa.generateKeyPair(nbits);
     const cert = pki.createCertificate();
@@ -39,7 +24,7 @@ class PublicKeyInfrastructure {
 
     const attrs = [{
       name: 'commonName',
-      value: 'polykey'
+      value: commonName
     }, {
       name: 'organizationName',
       value: organizationName
@@ -84,15 +69,16 @@ class PublicKeyInfrastructure {
       name: 'subjectKeyIdentifier'
     }]);
     // self-sign certificate
-    console.log(this.caPrivateKey!.toString());
-
-    cert.sign(pki.privateKeyFromPem(this.caPrivateKey!.toString()));
+    cert.sign(keys.privateKey);
 
     // convert a Forge certificate to PEM
-    this.key = Buffer.from(pki.privateKeyToPem(keys.privateKey))
-    this.cert = Buffer.from(pki.certificateToPem(cert))
+    const keyPem = pki.privateKeyToPem(keys.privateKey)
+    const certPem = pki.certificateToPem(cert);
+    return {
+      keyPem,
+      certPem
+    }
   }
-
 }
 
 export default PublicKeyInfrastructure

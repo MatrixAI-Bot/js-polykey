@@ -1,15 +1,20 @@
-import fs from 'fs'
-import os from 'os'
-import Path from 'path'
-import kbpgp from 'kbpgp'
-import crypto from 'crypto'
-import { promisify } from 'util'
-import {Pool, ModuleThread} from 'threads'
-import { KeyManagerWorker } from '@polykey/keys/KeyManagerWorker'
+import fs from 'fs';
+import os from 'os';
+import Path from 'path';
+import kbpgp from 'kbpgp';
+import crypto from 'crypto';
+import { promisify } from 'util';
+import { Pool, ModuleThread } from 'threads';
+import { KeyManagerWorker } from '../keys/KeyManagerWorker';
+import PublicKeyInfrastructure from './pki/PublicKeyInfrastructure';
 
 type KeyManagerMetadata = {
   privateKeyPath: string | null,
-  publicKeyPath: string | null
+  publicKeyPath: string | null,
+  caKeyPath: string | null,
+  caCertPath: string | null,
+  pkiKeyPath: string | null,
+  pkiCertPath: string | null,
 }
 
 type KeyPair = {
@@ -18,14 +23,29 @@ type KeyPair = {
 }
 
 class KeyManager {
-  private primaryKeyPair: KeyPair = {private: null, public: null}
+  private primaryKeyPair: KeyPair = { private: null, public: null }
   private primaryIdentity?: Object
   private derivedKeys: Map<string, Buffer>
   private useWebWorkers: boolean
   private workerPool?: Pool<ModuleThread<KeyManagerWorker>>
 
   private metadataPath: string
-  private metadata: KeyManagerMetadata = { privateKeyPath: null, publicKeyPath: null }
+  private metadata: KeyManagerMetadata = {
+    privateKeyPath: null,
+    publicKeyPath: null,
+    caKeyPath: null,
+    caCertPath: null,
+    pkiKeyPath: null,
+    pkiCertPath: null
+  }
+
+  /////////
+  // PKI //
+  /////////
+  private caPrivateKey: Buffer
+  private caCert: Buffer
+  private pkiPrivateKey: Buffer
+  private pkiCert: Buffer
 
   constructor(
     polyKeyPath: string = `${os.homedir()}/.polykey`,
@@ -38,12 +58,11 @@ class KeyManager {
     this.derivedKeys = new Map()
 
     // Load key manager metadata
-    const keypairPath = Path.join(polyKeyPath, '.keypair')
-    fs.mkdirSync(keypairPath)
-    this.metadataPath = Path.join(keypairPath, 'metadata')
+    this.metadataPath = Path.join(polyKeyPath, '.keypair', 'metadata')
+    fs.mkdirSync(Path.dirname(this.metadataPath))
     this.loadMetadata()
 
-    // Load keys if they were provided
+    // Load keys if they exist in metadata
     if (this.metadata.privateKeyPath && this.metadata.publicKeyPath && passphrase) {
       // Load files into memory
       const publicKey = fs.readFileSync(this.metadata.publicKeyPath)
@@ -53,6 +72,19 @@ class KeyManager {
       this.loadKeyPair(publicKey, privateKey, passphrase)
     }
 
+    /////////
+    // PKI //
+    /////////
+    const { keyPem, certPem } = PublicKeyInfrastructure.createX509Certificate()
+    // Load pki keys if they exists, or generate if they don't yet
+    if (this.metadata.pkiKeyPath && this.metadata.pkiCertPath) {
+      // Load files into memory
+      const pkiKey = fs.readFileSync(this.metadata.pkiKeyPath)
+      const pkiCert = fs.readFileSync(this.metadata.pkiCertPath)
+
+      // Load private and public keys
+      this.loadPKIInfo(pkiKey, pkiCert)
+    }
   }
 
   // return {private: string, public: string}
@@ -63,7 +95,7 @@ class KeyManager {
     // Define options
     const F = kbpgp["const"].openpgp
     const options = {
-      asp: (progressCallback) ? new kbpgp.ASP({progress_hook: progressCallback}) : undefined,
+      asp: (progressCallback) ? new kbpgp.ASP({ progress_hook: progressCallback }) : undefined,
       userid: `${name} <${email}>`,
       primary: {
         nbits: nbits,
@@ -88,7 +120,7 @@ class KeyManager {
               reject(err)
             }
             // Finally export priv key
-            identity.export_pgp_private({passphrase: passphrase}, (err, privKey) => {
+            identity.export_pgp_private({ passphrase: passphrase }, (err, privKey) => {
               if (err) {
                 reject(err)
               }
@@ -150,7 +182,7 @@ class KeyManager {
       this.primaryKeyPair.private = keyBuffer.toString()
 
     } catch (err) {
-      throw(err)
+      throw (err)
     }
   }
 
@@ -166,7 +198,7 @@ class KeyManager {
       }
       this.primaryKeyPair.public = keyBuffer.toString()
     } catch (err) {
-      throw(err)
+      throw (err)
     }
   }
 
@@ -175,7 +207,7 @@ class KeyManager {
       const pubKey: string = this.getPublicKey()
       const privKey: string = this.getPrivateKey()
 
-      kbpgp.KeyManager.import_from_armored_pgp({armored: pubKey}, (err, identity) => {
+      kbpgp.KeyManager.import_from_armored_pgp({ armored: pubKey }, (err, identity) => {
         if (err) {
           reject(err)
         }
@@ -222,14 +254,14 @@ class KeyManager {
   // symmetric key generation
   generateKeySync(name: string, passphrase: string): Buffer {
     const salt = crypto.randomBytes(32)
-    this.derivedKeys[name] = crypto.pbkdf2Sync(passphrase , salt, 10000, 256/8, 'sha256')
+    this.derivedKeys[name] = crypto.pbkdf2Sync(passphrase, salt, 10000, 256 / 8, 'sha256')
 
     return this.derivedKeys[name]
   }
 
   async generateKey(name: string, passphrase: string): Promise<Buffer> {
     const salt = crypto.randomBytes(32)
-    this.derivedKeys[name] = await promisify(crypto.pbkdf2)(passphrase , salt, 10000, 256/8, 'sha256')
+    this.derivedKeys[name] = await promisify(crypto.pbkdf2)(passphrase, salt, 10000, 256 / 8, 'sha256')
 
     return this.derivedKeys[name]
   }
@@ -255,7 +287,7 @@ class KeyManager {
       throw Error(`There is no key loaded for name: ${name}`)
     }
     if (createPath) {
-      await fs.promises.mkdir(Path.dirname(path), {recursive: true})
+      await fs.promises.mkdir(Path.dirname(path), { recursive: true })
     }
     await fs.promises.writeFile(path, this.derivedKeys[name])
   }
@@ -265,14 +297,14 @@ class KeyManager {
       throw Error(`There is no key loaded for name: ${name}`)
     }
     if (createPath) {
-      fs.mkdirSync(Path.dirname(path), {recursive: true})
+      fs.mkdirSync(Path.dirname(path), { recursive: true })
     }
     fs.writeFileSync(path, this.derivedKeys[name])
   }
 
   async getIdentityFromPublicKey(pubKey: Buffer): Promise<Object> {
     return new Promise<Object>((resolve, reject) => {
-      kbpgp.KeyManager.import_from_armored_pgp({armored: pubKey}, (err, identity) => {
+      kbpgp.KeyManager.import_from_armored_pgp({ armored: pubKey }, (err, identity) => {
         if (err) {
           reject(err)
         }
@@ -283,7 +315,7 @@ class KeyManager {
 
   async getIdentityFromPrivateKey(privKey: Buffer, passphrase: string): Promise<Object> {
     return new Promise<Object>((resolve, reject) => {
-      kbpgp.KeyManager.import_from_armored_pgp({armored: privKey}, (err, identity) => {
+      kbpgp.KeyManager.import_from_armored_pgp({ armored: privKey }, (err, identity) => {
         if (err) {
           reject(err)
         }
@@ -315,7 +347,7 @@ class KeyManager {
       } else if (this.primaryIdentity) {
         resolvedIdentity = this.primaryIdentity
       } else {
-        throw(Error('no identity available for signing'))
+        throw (Error('no identity available for signing'))
       }
 
       if (this.useWebWorkers && this.workerPool) {
@@ -433,7 +465,7 @@ class KeyManager {
       try {
         resolvedIdentity = await this.getIdentityFromPublicKey(forPubKey)
       } catch (err) {
-        throw(Error(`Identity could not be resolved for encrypting: ${err}`))
+        throw (Error(`Identity could not be resolved for encrypting: ${err}`))
       }
 
       if (this.useWebWorkers && this.workerPool) {
@@ -466,7 +498,7 @@ class KeyManager {
       } else if (this.primaryIdentity) {
         resolvedIdentity = this.primaryIdentity
       } else {
-        throw(Error('no identity available for signing'))
+        throw (Error('no identity available for signing'))
       }
 
       if (this.useWebWorkers && this.workerPool) {
@@ -493,6 +525,37 @@ class KeyManager {
         })
       }
     })
+  }
+
+  /////////
+  // PKI //
+  /////////
+  public get PKIInfo(): { keyPem: Buffer, certPem: Buffer } {
+    return { keyPem: this.pkiPrivateKey, certPem: this.pkiCert }
+  }
+
+  public get CAInfo(): { caKeyPem: Buffer, caCertPem: Buffer } {
+    return { caKeyPem: this.caPrivateKey, caCertPem: this.caCert }
+  }
+
+  loadPKIInfo(keyPem: Buffer, certPem: Buffer) {
+    this.pkiPrivateKey = keyPem
+    this.pkiCert = certPem
+    // Store in the metadata path folder
+    const storagePath = Path.dirname(this.metadataPath)
+
+    fs.writeFileSync(Path.join(storagePath, 'pki_private_key'), keyPem)
+    fs.writeFileSync(Path.join(storagePath, 'pki_cert'), certPem)
+  }
+
+  loadCAInfo(keyPem: Buffer, certPem: Buffer) {
+    this.caPrivateKey = keyPem
+    this.caCert = certPem
+    // Store in the metadata path folder
+    const storagePath = Path.dirname(this.metadataPath)
+
+    fs.writeFileSync(Path.join(storagePath, 'ca_private_key'), keyPem)
+    fs.writeFileSync(Path.join(storagePath, 'ca_cert'), certPem)
   }
 
   /* ============ HELPERS =============== */
@@ -523,4 +586,4 @@ class KeyManager {
 }
 
 export default KeyManager
-export { KeyPair}
+export { KeyPair }
