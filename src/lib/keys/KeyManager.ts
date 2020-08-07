@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { promisify } from 'util';
 import { Pool, ModuleThread } from 'threads';
 import { KeyManagerWorker } from '../keys/KeyManagerWorker';
+import KeybaseManager from './KeybaseManager';
 
 type KeyManagerMetadata = {
   privateKeyPath: string | null;
@@ -43,6 +44,8 @@ class KeyManager {
     caCertPath: null
   };
 
+  private keybaseManager: KeybaseManager | undefined
+
   /////////
   // PKI //
   /////////
@@ -74,6 +77,11 @@ class KeyManager {
       // Load files into memory
       this.loadKeyPair(this.metadata.publicKeyPath, this.metadata.privateKeyPath);
     }
+
+    /////////////
+    // Keybase //
+    /////////////
+    this.keybaseManager = new KeybaseManager()
 
     /////////
     // PKI //
