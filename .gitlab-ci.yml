@@ -46,3 +46,17 @@ deploy_npm:
     - npm run build:all
     - echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
     - npm publish
+
+
+deploy_docs:
+  stage: deploy
+  image: registry.gitlab.com/matrixai/engineering/maintenance/gitlab-runner
+  before_script:
+    - git config user.email "robert.cronin@matrix.ai"
+    - git config user.name "ci-build"
+  # only:
+  #   - tags
+  #   - triggers
+  script:
+    - typedoc --out temp_docs
+    - gh-pages --dist temp_docs
