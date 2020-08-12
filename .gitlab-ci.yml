@@ -18,41 +18,50 @@ before_script:
   - node --version
   - npm install
 
-prettier:
-  stage: check
-  image: node:12
-  script:
-    - npm run lint
+# prettier:
+#   stage: check
+#   image: node:12
+#   script:
+#     - npm run lint
 
-jest:
-  stage: check
-  image: node:12
-  script:
-    - npm run test
+# jest:
+#   stage: check
+#   image: node:12
+#   script:
+#     - npm run test
 
-build_all:
-  stage: build
-  image: node:12
-  script:
-    - npm run build:all
+# build_all:
+#   stage: build
+#   image: node:12
+#   script:
+#     - npm run build:all
 
-deploy_npm:
-  stage: deploy
-  image: node:12
-  only:
-    - tags
-    - triggers
-  script:
-    - npm run build:all
-    - echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
-    - npm publish
+# deploy_npm:
+#   stage: deploy
+#   image: node:12
+#   only:
+#     - tags
+#     - triggers
+#   script:
+#     - npm run build:all
+#     - echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
+#     - npm publish
 
 
 deploy_docs:
   stage: deploy
   image: registry.gitlab.com/matrixai/engineering/maintenance/gitlab-runner
   before_script:
-    - git config user.email "robert.cronin@matrix.ai"
+    - ssh-agent -s
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    # create and permission .ssh folder
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    # add github.com to known_hosts
+    - ssh-keyscan github.com >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+    # set up for git push
+    - git config user.email "ci-build@matrix.ai"
     - git config user.name "ci-build"
   # only:
   #   - tags
